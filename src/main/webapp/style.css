@@ -1,0 +1,150 @@
+/* Общие стили для таблиц */
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 15px 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 12px;
+    text-align: left;
+}
+
+th {
+    background-color: #2c3e50;
+    color: white;
+    font-weight: bold;
+}
+
+/* Стили для статусов */
+.low-stock {
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+.out-of-stock {
+    color: #c0392b;
+    font-weight: bold;
+    background-color: #ffeaea;
+}
+
+.in-stock {
+    color: #27ae60;
+    font-weight: bold;
+}
+
+/* Стили для ошибок */
+.error-message {
+    background-color: #ffeaea;
+    border: 1px solid #e74c3c;
+    color: #c0392b;
+    padding: 15px;
+    border-radius: 5px;
+    margin: 15px 0;
+}
+
+.success-message {
+    background-color: #e8f6ef;
+    border: 1px solid #27ae60;
+    color: #27ae60;
+    padding: 15px;
+    border-radius: 5px;
+    margin: 15px 0;
+}
+
+/* Общие стили страницы */
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    background-color: #f5f5f5;
+}
+
+.header {
+    background: #3498db;
+    color: white;
+    padding: 20px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+}
+
+.nav {
+    background: white;
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.nav a {
+    margin-right: 20px;
+    text-decoration: none;
+    color: #2c3e50;
+    font-weight: bold;
+    padding: 10px 15px;
+    border-radius: 3px;
+}
+
+.nav a:hover {
+    background: #ecf0f1;
+}
+
+.container {
+    display: flex;
+    gap: 20px;
+}
+
+.card {
+    background: white;
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    flex: 1;
+}
+
+.card h3 {
+    color: #2c3e50;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 10px;
+}
+
+.stats {
+    font-size: 24px;
+    font-weight: bold;
+    color: #2c3e50;
+    text-align: center;
+    margin: 10px 0;
+}
+
+/* Стили для кнопок */
+.btn {
+    padding: 8px 15px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 14px;
+}
+
+.btn-primary {
+    background: #3498db;
+    color: white;
+}
+
+.btn-success {
+    background: #27ae60;
+    color: white;
+}
+
+.btn-warning {
+    background: #f39c12;
+    color: white;
+}
+
+.btn-danger {
+    background: #e74c3c;
+    color: white;
+}
