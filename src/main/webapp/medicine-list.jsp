@@ -26,7 +26,7 @@
             <tr>
                 <td>${med.id}</td>
                 <td>
-                    <a href="medicine?id=${med.id}&format=html">${med.name}</a>
+                    <a href="medicine?id=${med.id}">${med.name}</a>
                 </td>
                 <td>${med.dosageForm}</td>
                 <td>${med.price} руб.</td>
@@ -34,14 +34,17 @@
                     ${med.quantityInStock} шт.
                 </td>
                 <td>${med.requiresPrescription ? 'Да' : 'Нет'}</td>
-                <td><button class="btn-danger" onclick="confirmDelete(${med.id},'${med.name}')">Удалить</button>
+                <td>
+                    <button class="btn-danger" onclick="confirmDelete(${med.id},'${med.name}')">Удалить</button>
+                    <button class="btn-primary" onclick="window.location.href='medicine?action=edit&id=${med.id}'">Изменить</button>
+                </td>
             </tr>
         </c:forEach>
     </table>
 
     <div>
         <a href="index.jsp">На главную</a> |
-        <a href="medicine-add.jsp">Добавить препарат</a>
+        <a href="medicine?action=add">Добавить препарат</a>
     </div>
 
     <script>

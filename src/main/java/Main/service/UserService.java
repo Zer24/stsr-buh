@@ -46,4 +46,35 @@ public class UserService {
             throw new RuntimeException("Ошибка при поиске пользователя", e);
         }
     }
+    public void addUser(User user){
+        Connection connection = null;
+        try{
+            connection = DatabaseConnection.startTransaction();
+            if(userRepository.existsByEmail(connection, user.getEmail())){
+                throw new RuntimeException("Пользователь с такой почтой уже существует");
+            }
+            if(userRepository.insert(connection, user)){
+                DatabaseConnection.closeConnection(connection, true);
+            }
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException(e);
+        }
+    }
+    public void deleteUser(int id){
+        Connection connection = null;
+        try{
+            connection = DatabaseConnection.startTransaction();
+            if(!userRepository.existsById(connection, id)){
+                throw new RuntimeException("Пользователя с таким id не существует");
+            }
+            if(userRepository.delete(connection, id)){
+                DatabaseConnection.closeConnection(connection, true);
+            }
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException(e);
+        }
+    }
+
 }

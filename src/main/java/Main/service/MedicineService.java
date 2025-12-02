@@ -39,6 +39,23 @@ public class MedicineService {
             throw new RuntimeException("Ошибка при добавлении лекарства: " + e.getMessage(), e);
         }
     }
+    public void updateMedicine(Medicine medicine) {
+        Connection connection = null;
+        try {
+            connection = DatabaseConnection.startTransaction();
+            if(medicine.getName().length()==0){
+                throw new RuntimeException("Препарат должен иметь название!");
+            }
+            medicineRepository.update(connection, medicine);
+
+            System.out.println("Добавлено новое лекарство: " + medicine.getName());
+
+            DatabaseConnection.closeConnection(connection, true);
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException("Ошибка при добавлении лекарства: " + e.getMessage(), e);
+        }
+    }
     public void deleteMedicine(int id){
         Connection connection = null;
         try{
@@ -56,14 +73,14 @@ public class MedicineService {
             throw new RuntimeException(e);
         }
     }
-    public boolean updateMedicineStockWithTransaction(Integer medicineId, Integer newQuantity) {
+    public boolean updateMedicineStock(Integer medicineId, Integer newQuantity) {
         Connection connection = null;
         try {
             connection = DatabaseConnection.startTransaction();
             Optional<Medicine> medicineOpt = medicineRepository.selectById(connection, medicineId);
             if (medicineOpt.isEmpty()) {throw new RuntimeException("Лекарство с ID " + medicineId + " не найдено");}
             if (newQuantity < 0) {throw new RuntimeException("Количество не может быть отрицательным");}
-            boolean updated = medicineRepository.updateStockQuantity(medicineId, newQuantity);
+            boolean updated = medicineRepository.updateStockQuantity(connection, medicineId, newQuantity);
             connection.commit();
             DatabaseConnection.closeConnection(connection, true);
             return updated;

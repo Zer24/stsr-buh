@@ -9,8 +9,10 @@
         <module name="stsr" />
       </profile>
     </annotationProcessing>
-    <bytecodeTargetLevel>
-      <module name="stsr_buh" target="17" />
-    </bytecodeTargetLevel>
+  </component>
+  <component name="JavacSettings">
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="stsr" options="" />
+    </option>
   </component>
 </project>

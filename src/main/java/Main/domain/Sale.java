@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.Date;
 
 public class Sale {
     private Integer id;
@@ -54,6 +56,11 @@ public class Sale {
     public Integer getPharmacistId() { return pharmacistId; }
     public void setPharmacistId(Integer pharmacistId) { this.pharmacistId = pharmacistId; }
 
+    // Для JSP
+    public Date getSaleDateForJSP() {
+        if (saleDateTime == null) return null;
+        return Date.from(saleDateTime.atZone(ZoneId.systemDefault()).toInstant());
+    }
     public LocalDateTime getSaleDateTime() { return saleDateTime; }
     public void setSaleDateTime(LocalDateTime saleDateTime) { this.saleDateTime = saleDateTime; }
 

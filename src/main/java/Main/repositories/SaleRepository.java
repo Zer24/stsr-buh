@@ -14,19 +14,16 @@ import java.util.Optional;
 public class SaleRepository {
 
     // CREATE - добавление новой продажи
-    public Optional<Sale> insert(Sale sale) throws SQLException {
+    public boolean insert(Connection connection, Sale sale) throws SQLException {
         String sql = "INSERT INTO sales (client_id, pharmacist_id, sale_datetime, medicine_id, quantity, total_amount) " +
                 "VALUES (?, ?, ?, ?, ?, ?)";
         ArrayList<Object> objects = new ArrayList<>(Arrays.asList(sale.getClientId(), sale.getPharmacistId(), sale.getSaleDateTime(), sale.getMedicineId(), sale.getQuantity(), sale.getTotalAmount()));
-        try (Connection connection = DatabaseConnection.getConnection();
-                ResultSet generatedKeys = DatabaseConnection.operationQuery(sql, connection, objects)) {
-            if (generatedKeys.next()) {
-                sale.setId(generatedKeys.getInt(1));
-                System.out.println("Продажа добавлена: ID " + sale.getId());
-                return Optional.of(sale);
-            }
+        int result = DatabaseConnection.operationUpdate(sql, connection, objects);
+        if (result>0) {
+            System.out.println("Продажа добавлена: " + sale);
+            return true;
         }
-        return Optional.empty();
+        return false;
     }
     public Optional<Sale> selectById(Connection connection, Integer id) throws SQLException {
         String sql = "SELECT s.*, " +
@@ -139,33 +136,23 @@ public class SaleRepository {
             return false;
         }
     }
-    public boolean delete(Integer id) throws SQLException {
+    public boolean delete(Connection connection, Integer id) throws SQLException {
         String sql = "DELETE FROM sales WHERE id = ?";
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setInt(1, id);
-
-            int rowsAffected = statement.executeUpdate();
-            if (rowsAffected > 0) {
-                System.out.println("Продажа удалена: ID " + id);
-                return true;
-            }
-            return false;
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(id);
+        int result = DatabaseConnection.operationUpdate(sql, connection, objects);
+        if (result > 0) {
+            System.out.println("Продажа удалена: ID " + id);
+            return true;
         }
+        return false;
     }
-    public boolean existsById(Integer id) throws SQLException {
+    public boolean existsById(Connection connection, Integer id) throws SQLException {
         String sql = "SELECT 1 FROM sales WHERE id = ?";
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setInt(1, id);
-
-            try (ResultSet resultSet = statement.executeQuery()) {
-                return resultSet.next();
-            }
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(id);
+        try (ResultSet resultSet = DatabaseConnection.operationQuery(sql, connection, objects)) {
+            return resultSet.next();
         }
     }
     public int getTotalSalesCount() throws SQLException {

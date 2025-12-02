@@ -6,6 +6,7 @@ import Main.domain.Medicine;
 import Main.domain.Sale;
 import Main.repositories.MedicineRepository;
 import Main.repositories.SaleRepository;
+import Main.repositories.UserRepository;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -15,33 +16,38 @@ import java.util.Optional;
 
 public class SaleService {
     private SaleRepository saleRepository;
+    private MedicineRepository medicineRepository;
+    private UserRepository userRepository;
 
     public SaleService() {
         this.saleRepository = new SaleRepository();
+        this.medicineRepository = new MedicineRepository();
+        this.userRepository = new UserRepository();
     }
 
-    public Sale addSaleWithTransaction(Sale sale) {
+    public void addSale(Sale sale) {
         Connection connection = null;
         try {
             // Получаем соединение (начало транзакции)
             connection = DatabaseConnection.startTransaction();
 
             if(sale.getClientId()==null || sale.getMedicineId()==null || sale.getPharmacistId()==null){throw new RuntimeException("Вместо значений полей получено null");}
+            if(userRepository.selectById(connection,sale.getPharmacistId()).get().isClient()){
+                throw new RuntimeException("Пользователь не может продавать препараты");
+            }
             if(sale.getQuantity()<=0){throw new RuntimeException("Нельзя продать неположительное число препарата");}
             if(sale.getTotalAmount().compareTo(BigDecimal.valueOf(0))==-1){throw new RuntimeException("Продажа с отрицательной выручкой");}
 
-            Optional<Sale> savedSale = saleRepository.insert(sale);
-            if(savedSale.isEmpty()){throw new RuntimeException("Ошибка при сохранении ");}
-            System.out.println("Добавлена новая запись: " + savedSale.toString());
+            if(medicineRepository.selectById(connection, sale.getMedicineId()).get().getQuantityInStock()<sale.getQuantity()){throw new RuntimeException("Нельзя продать больше препаратов чем есть в наличии");}
 
-            connection.commit();
-            return savedSale.get();
+            if(!medicineRepository.updateStockQuantity(connection, sale.getMedicineId(), sale.getQuantity())){throw new RuntimeException("Произошла ошибка при изменении числа препаратов в наличии");}
 
+            if(!saleRepository.insert(connection, sale)){throw new RuntimeException("Ошибка при сохранении ");}
+
+            DatabaseConnection.closeConnection(connection, true);
         } catch (SQLException e) {
             DatabaseConnection.closeConnection(connection, false);
             throw new RuntimeException("Ошибка при добавлении лекарства: " + e.getMessage(), e);
-        } finally {
-            DatabaseConnection.closeConnection(connection, true);
         }
     }
     // Простые методы без сложной логики могут не требовать явного управления транзакциями
@@ -71,6 +77,22 @@ public class SaleService {
         } catch (SQLException e) {
             DatabaseConnection.closeConnection(connection, false);
             throw new RuntimeException("Ошибка при поиске лекарства", e);
+        }
+    }
+
+    public void deleteSale(int id){
+        Connection connection = null;
+        try{
+            connection = DatabaseConnection.startTransaction();
+            if(!saleRepository.existsById(connection, id)){
+                throw new RuntimeException("Пользователя с таким id не существует");
+            }
+            if(saleRepository.delete(connection, id)){
+                DatabaseConnection.closeConnection(connection, true);
+            }
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException(e);
         }
     }
 }

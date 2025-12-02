@@ -5,6 +5,7 @@ import Main.domain.Medicine;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -59,41 +60,28 @@ public class MedicineRepository {
         }
         return medicines;
     }
-    public boolean update(Medicine medicine) throws SQLException {
+    public boolean update(Connection connection, Medicine medicine) throws SQLException {
         String sql = "UPDATE medicines SET name = ?, description = ?, price = ?, " +
                 "dosage_form = ?, quantity_in_stock = ?, requires_prescription = ? " +
                 "WHERE id = ?";
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            setMedicineParameters(statement, medicine);
-            statement.setInt(7, medicine.getId());
-
-            int rowsAffected = statement.executeUpdate();
-            if (rowsAffected > 0) {
-                System.out.println("Препарат обновлен: " + medicine.getName());
-                return true;
-            }
-            return false;
-        }
+        ArrayList<Object> objects = new ArrayList<>(Arrays.asList(medicine.getName(),
+                medicine.getDescription(),
+                medicine.getPrice(),
+                medicine.getDosageForm(),
+                medicine.getQuantityInStock(),
+                medicine.getRequiresPrescription(),
+                medicine.getId()));
+        return DatabaseConnection.operationUpdate(sql, connection, objects)>0;
     }
-    public boolean updateStockQuantity(Integer medicineId, Integer newQuantity) throws SQLException {
-        String sql = "UPDATE medicines SET quantity_in_stock = ? WHERE id = ?";
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setInt(1, newQuantity);
-            statement.setInt(2, medicineId);
-
-            int rowsAffected = statement.executeUpdate();
-            if (rowsAffected > 0) {
-                System.out.println("Количество препарата ID " + medicineId + " обновлено: " + newQuantity);
-                return true;
-            }
-            return false;
+    public boolean updateStockQuantity(Connection connection, Integer medicineId, Integer itemsSold) throws SQLException {
+        String sql = "UPDATE medicines SET quantity_in_stock = quantity_in_stock - ? WHERE id = ?";
+        ArrayList<Object> objects = new ArrayList<>(Arrays.asList(itemsSold, medicineId));
+        int result = DatabaseConnection.operationUpdate(sql, connection, objects);
+        if (result > 0) {
+            System.out.println("Количество препарата ID " + medicineId + " обновлено: ");
+            return true;
         }
+        return false;
     }
     public boolean delete(Connection connection, Integer id) throws SQLException {
         String sql = "DELETE FROM medicines WHERE id = ?";

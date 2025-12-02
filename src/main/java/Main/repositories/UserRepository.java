@@ -9,24 +9,19 @@ import java.util.List;
 import java.util.Optional;
 
 public class UserRepository {
-    public User insert(User user) throws SQLException {
+    public boolean insert(Connection connection, User user) throws SQLException {
         String sql = "INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)";
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-
-            setUserParameters(statement, user);
-            statement.executeUpdate();
-
-            // Получаем сгенерированный ID
-            try (ResultSet generatedKeys = statement.getGeneratedKeys()) {
-                if (generatedKeys.next()) {
-                    user.setId(generatedKeys.getInt(1));
-                }
-            }
-
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(user.getEmail());
+        objects.add(user.getPassword());
+        objects.add(user.getName());
+        objects.add(user.getRole());
+        try {
+            int result = DatabaseConnection.operationUpdate(sql, connection, objects);
             System.out.println("Пользователь добавлен: " + user.getEmail() + " (ID: " + user.getId() + ")");
-            return user;
+            return result==1;
+        }catch (Exception e){
+            throw new RuntimeException("Не удалось добавить пользователя", e);
         }
     }
     public Optional<User> selectById(Connection connection, Integer id) throws SQLException {
@@ -84,46 +79,31 @@ public class UserRepository {
             return false;
         }
     }
-    public boolean delete(Integer id) throws SQLException {
+    public boolean delete(Connection connection, Integer id) throws SQLException {
         String sql = "DELETE FROM users WHERE id = ?";
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setInt(1, id);
-
-            int rowsAffected = statement.executeUpdate();
-            if (rowsAffected > 0) {
-                System.out.println("Пользователь удален: ID " + id);
-                return true;
-            }
-            return false;
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(id);
+        int result = DatabaseConnection.operationUpdate(sql, connection, objects);
+        if (result > 0) {
+            System.out.println("Пользователь удален: ID " + id);
+            return true;
         }
+        return false;
     }
-    public boolean existsById(Integer id) throws SQLException {
+    public boolean existsById(Connection connection, Integer id) throws SQLException {
         String sql = "SELECT 1 FROM users WHERE id = ?";
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setInt(1, id);
-
-            try (ResultSet resultSet = statement.executeQuery()) {
-                return resultSet.next();
-            }
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(id);
+        try (ResultSet resultSet = DatabaseConnection.operationQuery(sql, connection, objects)) {
+            return resultSet.next();
         }
     }
-    public boolean existsByEmail(String email) throws SQLException {
+    public boolean existsByEmail(Connection connection, String email) throws SQLException {
         String sql = "SELECT 1 FROM users WHERE email = ?";
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setString(1, email);
-
-            try (ResultSet resultSet = statement.executeQuery()) {
-                return resultSet.next();
-            }
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(email);
+        try (ResultSet resultSet = DatabaseConnection.operationQuery(sql, connection, objects)) {
+            return resultSet.next();
         }
     }
     public Optional<User> authenticate(String email, String password) throws SQLException {
