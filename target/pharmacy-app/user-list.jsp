@@ -13,7 +13,7 @@
     </style>
 </head>
 <body>
-    <h1>👥 Пользователи системы</h1>
+    <h1>Пользователи системы</h1>
 
     <table>
         <tr>
@@ -33,15 +33,17 @@
                 <td>${user.email}</td>
                 <td class="role-${user.role}">
                     <c:choose>
-                        <c:when test="${user.role == 'ADMIN'}">Администратор</c:when>
-                        <c:when test="${user.role == 'PHARMACIST'}">Фармацевт</c:when>
-                        <c:when test="${user.role == 'USER'}">Пользователь</c:when>
+                        <c:when test="${user.role == 'admin'}">Администратор</c:when>
+                        <c:when test="${user.role == 'employee'}">Фармацевт</c:when>
+                        <c:when test="${user.role == 'user'}">Пользователь</c:when>
                         <c:otherwise>${user.role}</c:otherwise>
                     </c:choose>
                 </td>
-                <td>
-                    <button class="btn-danger" onclick="confirmDelete(${user.id},'${user.name}')">Удалить</button>
-                </td>
+                <c:if test="${sessionUser.role == 'employee' || sessionUser.role == 'admin'}">
+                    <td>
+                        <button class="btn-danger" onclick="confirmDelete(${user.id},'${user.name}')">Удалить</button>
+                    </td>
+                </c:if>
             </tr>
         </c:forEach>
     </table>

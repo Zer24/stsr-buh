@@ -8,7 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-public class UserRepository {
+public class UserRepository implements IUserRepository{
     public boolean insert(Connection connection, User user) throws SQLException {
         String sql = "INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)";
         ArrayList<Object> objects = new ArrayList<>();
@@ -98,12 +98,16 @@ public class UserRepository {
             return resultSet.next();
         }
     }
-    public boolean existsByEmail(Connection connection, String email) throws SQLException {
-        String sql = "SELECT 1 FROM users WHERE email = ?";
+    public Optional<User> selectByEmail(Connection connection, String email) throws SQLException {
+        String sql = "SELECT * FROM users WHERE email = ?";
         ArrayList<Object> objects = new ArrayList<>();
         objects.add(email);
         try (ResultSet resultSet = DatabaseConnection.operationQuery(sql, connection, objects)) {
-            return resultSet.next();
+            if(resultSet.next()) {
+                return Optional.of(mapResultSetToUser(resultSet));
+            }else{
+                return Optional.empty();
+            }
         }
     }
     public Optional<User> authenticate(String email, String password) throws SQLException {

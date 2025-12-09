@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="${cssUrl}">
 </head>
 <body>
-    <h1>💰 Список продаж</h1>
+    <h1>Список продаж</h1>
 
     <table>
         <tr>

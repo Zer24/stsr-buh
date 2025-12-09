@@ -10,15 +10,22 @@
 </head>
 <body>
     <div class="header">
-        <h1>💊 Аптека "Здоровье"</h1>
+        <h1>Аптека Antartis</h1>
         <p>Система управления аптекой</p>
+        <div>Пользователь: ${sessionUser.name} [${sessionUser.role}]</div>
     </div>
 
     <div class="nav">
         <a href="medicine">Лекарства</a>
         <a href="user">Пользователи</a>
         <a href="sale">Продажи</a>
-        <a href="medicines?action=add">Добавить лекарство</a>
+        <c:if test="${empty sessionUser}">
+            <a href="login?action=login">Войти</a>
+        </c:if>
+        <c:if test="${not empty sessionUser}">
+            <a href="login?action=logout">Выйти</a>
+        </c:if>
+
     </div>
 
     <div class="container">
@@ -30,18 +37,19 @@
         </div>
 
         <div class="card">
-            <h3>👥 Управление клиентами</h3>
+            <h3>🥸Управление клиентами</h3>
             <p>Работа с базой клиентов и их данными</p>
             <div class="stats" id="userCount">-</div>
             <a href="user">Перейти к клиентам →</a>
         </div>
-
-        <div class="card">
-            <h3>💰 Управление продажами</h3>
-            <p>История продаж и создание новых</p>
-            <div class="stats" id="saleCount">-</div>
-            <a href="sale">Перейти к продажам →</a>
-        </div>
+        <c:if test="${sessionUser.role != user}">
+            <div class="card">
+                <h3>💰 Управление продажами</h3>
+                <p>История продаж и создание новых</p>
+                <div class="stats" id="saleCount">-</div>
+                <a href="sale">Перейти к продажам →</a>
+            </div>
+        </c:if>
     </div>
 
     <script>

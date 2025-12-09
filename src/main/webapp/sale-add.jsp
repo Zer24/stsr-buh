@@ -72,7 +72,7 @@
             <div class="form-group">
                 <label class="form-label" for="pharmacistId">Продавец *</label>
                 <input type="number" id="pharmacistId" name="pharmacistId" class="form-input"
-                                                   min="1" value="${param.pharmacistId}">
+                                                   min="1" value="${sessionUser.id}" readonly>
             </div>
             <div class="form-group">
                 <label class="form-label" for="medicineId">Препарат *</label>

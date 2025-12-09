@@ -3,6 +3,8 @@ package Main.servlet;
 import Main.NotFoundException;
 import Main.ServletHelper;
 import Main.domain.User;
+import Main.service.IUserService;
+import Main.service.ServiceFactory;
 import Main.service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.ServletException;
@@ -10,88 +12,112 @@ import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.Objects;
-
 @WebServlet("/user")
 public class UserServlet extends HttpServlet {
-    private UserService userService;
+    private IUserService userService;
     private ObjectMapper mapper;
 
     @Override
     public void init() {
-        this.userService = new UserService();
+        this.userService = new ServiceFactory().createUserService();
         mapper = new ObjectMapper();
     }
 
     @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) {
-        try {
-            if (Objects.equals(request.getParameter("format"), "json")) {
-                sendJson(request, response);
-            } else {
-                sendJSP(request, response);
-            }
-        } catch (Exception e) {
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String action = request.getParameter("action");
+        System.out.println("user doGet "+action);
+        if(action==null || action.equals("get")){
             try {
-                response.sendError(500, "Ошибка: " + e.getMessage());
-            } catch (IOException ex) {
-                throw new RuntimeException(ex);
+                if (Objects.equals(request.getParameter("format"), "json")) {
+                    sendJson(request, response);
+                } else {
+                    sendJSP(request, response);
+                }
+            } catch (Exception e) {
+                try {
+                    response.sendError(500, "Ошибка: " + e.getMessage());
+                } catch (IOException ex) {
+                    throw new RuntimeException(ex);
+                }
             }
+            return;
+        }else{
+            response.sendError(400, "Unknown action");
         }
     }
 
     @Override
-    protected void doPost(HttpServletRequest request, HttpServletResponse response) {
-        try {
-            // Получаем данные из формы
-            String name = request.getParameter("name");
-            String email = request.getParameter("email");
-            String password = request.getParameter("password");
-            String confirmPassword = request.getParameter("confirmPassword");
-            String role = request.getParameter("role");
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        User sessionUser = (User)request.getAttribute("sessionUser");
 
-            // Валидация
-            if (!password.equals(confirmPassword)) {
-                request.setAttribute("error", "Пароли не совпадают");
-                request.getRequestDispatcher("/user-add.jsp").forward(request, response);
-                return;
-            }
-
-            if (password.length() < 6) {
-                request.setAttribute("error", "Пароль должен содержать минимум 6 символов");
-                request.getRequestDispatcher("/user-add.jsp").forward(request, response);
-                return;
-            }
-
-            User user = new User();
-            user.setName(name.trim());
-            user.setEmail(email.trim());
-            user.setPassword(password);
-            user.setRole(role);
-
-            // Сохраняем через сервис
-            userService.addUser(user);
-
-            // Перенаправляем на список с сообщением об успехе
-            response.sendRedirect("user?format=html&success=1");
-
-        } catch (Exception e) {
+        if(sessionUser==null || Objects.equals(sessionUser.getRole(), "user")){
+            response.sendError(401, "Для доступа к этой странице необходима авторизация");
+            return;
+        }
+        String action = request.getParameter("action");
+        System.out.println("user doPost "+action);
+        if(Objects.equals(action, "add")) {
             try {
-                e.printStackTrace();
-                request.setAttribute("error", "Ошибка при создании пользователя: " + e.getMessage());
-                request.getRequestDispatcher("/user-add.jsp").forward(request, response);
-            } catch (ServletException | IOException ex) {
-                throw new RuntimeException(ex);
+                // Получаем данные из формы
+                String name = request.getParameter("name");
+                String email = request.getParameter("email");
+                String password = request.getParameter("password");
+                String confirmPassword = request.getParameter("confirmPassword");
+                String role = request.getParameter("role");
+
+                // Валидация
+                if (!password.equals(confirmPassword)) {
+                    request.setAttribute("error", "Пароли не совпадают");
+                    request.getRequestDispatcher("/user-add.jsp").forward(request, response);
+                    return;
+                }
+
+                if (password.length() < 6) {
+                    request.setAttribute("error", "Пароль должен содержать минимум 6 символов");
+                    request.getRequestDispatcher("/user-add.jsp").forward(request, response);
+                    return;
+                }
+
+                User user = new User();
+                user.setName(name.trim());
+                user.setEmail(email.trim());
+                user.setPassword(password);
+                user.setRole(role);
+
+                // Сохраняем через сервис
+                userService.addUser(user);
+
+                // Перенаправляем на список с сообщением об успехе
+                response.sendRedirect("user?format=html&success=1");
+
+            } catch (Exception e) {
+                try {
+                    e.printStackTrace();
+                    request.setAttribute("error", "Ошибка при создании пользователя: " + e.getMessage());
+                    request.getRequestDispatcher("/user-add.jsp").forward(request, response);
+                } catch (ServletException | IOException ex) {
+                    throw new RuntimeException(ex);
+                }
             }
+            return;
         }
     }
 
     @Override
     protected void doDelete(HttpServletRequest request, HttpServletResponse response) {
         try {
+            User user = (User)request.getAttribute("sessionUser");
+
+            if(user==null || Objects.equals(user.getRole(), "user")){
+                response.sendError(401, "Для доступа к этой странице необходима авторизация");
+                return;
+            }
             String idParam = request.getParameter("id");
             System.out.println("DELETING USER " + idParam);
 

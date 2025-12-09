@@ -15,6 +15,9 @@
         <strong>email:</strong> ${user.email}<br>
         <strong>name:</strong> ${user.name}<br>
         <strong>role:</strong> ${user.role}<br>
+        <c:if test="${sessionUser.role == admin}">
+            <strong>password:</strong> ${user.password}<br>
+        </c:if>
     </div>
 
     <div>

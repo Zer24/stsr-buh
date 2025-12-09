@@ -4,9 +4,7 @@ import Main.DatabaseConnection;
 import Main.NotFoundException;
 import Main.domain.Medicine;
 import Main.domain.Sale;
-import Main.repositories.MedicineRepository;
-import Main.repositories.SaleRepository;
-import Main.repositories.UserRepository;
+import Main.repositories.*;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -14,15 +12,17 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 
-public class SaleService {
-    private SaleRepository saleRepository;
-    private MedicineRepository medicineRepository;
-    private UserRepository userRepository;
+public class SaleService implements ISaleService{
+    private ISaleRepository saleRepository;
+    private IMedicineRepository medicineRepository;
+    private IUserRepository userRepository;
 
-    public SaleService() {
-        this.saleRepository = new SaleRepository();
-        this.medicineRepository = new MedicineRepository();
-        this.userRepository = new UserRepository();
+    public SaleService(ISaleRepository saleRepository,
+                       IMedicineRepository medicineRepository,
+                       IUserRepository userRepository) {
+        this.saleRepository = saleRepository;
+        this.medicineRepository = medicineRepository;
+        this.userRepository = userRepository;
     }
 
     public void addSale(Sale sale) {

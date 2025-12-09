@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="${cssUrl}">
 </head>
 <body>
-    <h1>💊 Список лекарств</h1>
+    <h1>Список лекарств</h1>
 
     <table>
         <tr>
@@ -34,10 +34,12 @@
                     ${med.quantityInStock} шт.
                 </td>
                 <td>${med.requiresPrescription ? 'Да' : 'Нет'}</td>
-                <td>
-                    <button class="btn-danger" onclick="confirmDelete(${med.id},'${med.name}')">Удалить</button>
-                    <button class="btn-primary" onclick="window.location.href='medicine?action=edit&id=${med.id}'">Изменить</button>
-                </td>
+                <c:if test="${not empty sessionUser and sessionUser.role != 'user'}">
+                    <td>
+                        <button class="btn-danger" onclick="confirmDelete(${med.id},'${med.name}')">Удалить</button>
+                        <button class="btn-primary" onclick="window.location.href='medicine?action=edit&id=${med.id}'">Изменить</button>
+                    </td>
+                </c:if>
             </tr>
         </c:forEach>
     </table>

@@ -11,7 +11,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
-public class SaleRepository {
+public class SaleRepository implements ISaleRepository{
 
     // CREATE - добавление новой продажи
     public boolean insert(Connection connection, Sale sale) throws SQLException {

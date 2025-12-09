@@ -59,7 +59,7 @@
             </div>
         </c:if>
 
-        <form action="user" method="post">
+        <form action="user?action=add" method="post">
             <div class="form-group">
                 <label class="form-label" for="name">Полное имя *</label>
                 <input type="text" id="name" name="name" class="form-input"

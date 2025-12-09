@@ -3,13 +3,15 @@ package Main.servlet;
 import Main.NotFoundException;
 import Main.ServletHelper;
 import Main.domain.Sale;
-import Main.service.SaleService;
+import Main.domain.User;
+import Main.service.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -20,20 +22,56 @@ import java.util.Objects;
 
 @WebServlet("/sale")
 public class SaleServlet extends HttpServlet {
-    private SaleService saleService;
+    private ISaleService saleService;
+    private IUserService userService;
+    private IMedicineService medicineService;
     private ObjectMapper mapper;
 
     @Override
     public void init() {
-        this.saleService = new SaleService();
+        IServiceFactory serviceFactory = new ServiceFactory();
+        this.saleService = serviceFactory.createSaleService();
+        this.userService = serviceFactory.createUserService();
+        this.medicineService = serviceFactory.createMedicineService();
         mapper = new ObjectMapper();
-        // Настройка формата даты для JSON
         mapper.findAndRegisterModules();
+    }
+
+    protected void showCreateForm(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        try {
+            request.setAttribute("clients", userService.getAllUsers());
+            request.setAttribute("medicines", medicineService.getAllMedicines());
+            request.getRequestDispatcher("/sale-form.jsp").forward(request, response);
+        } catch (Exception e) {
+            request.setAttribute("error", "Ошибка при загрузке данных: " + e.getMessage());
+            request.getRequestDispatcher("/error.jsp").forward(request, response);
+        }
     }
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) {
         try {
+            HttpSession session = request.getSession(false);
+            User user = (User)session.getAttribute("sessionUser");
+
+            if(user==null || Objects.equals(user.getRole(), "user")){
+                response.sendError(401, "Для доступа к этой странице необходима авторизация");
+                return;
+            }
+
+            String action = request.getParameter("action");
+            if ("searchClients".equals(action)) {
+                searchClients(request, response);
+                return;
+            } else if ("searchMedicines".equals(action)) {
+                searchMedicines(request, response);
+                return;
+            } else if ("getMedicinePrice".equals(action)) {
+                getMedicinePrice(request, response);
+                return;
+            }
+
             if (Objects.equals(request.getParameter("format"), "json")) {
                 sendJson(request, response);
             } else {
@@ -48,16 +86,29 @@ public class SaleServlet extends HttpServlet {
             }
         }
     }
-
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) {
         try {
-            // Получаем данные из формы
+            HttpSession session = request.getSession(false);
+            User user = (User)session.getAttribute("sessionUser");
+
+            if(user==null || Objects.equals(user.getRole(), "user")){
+                response.sendError(401, "Для доступа к этой странице необходима авторизация");
+                return;
+            }
+
             String clientIdStr = request.getParameter("clientId");
             String pharmacistIdStr = request.getParameter("pharmacistId");
             String medicineIdStr = request.getParameter("medicineId");
             String quantityStr = request.getParameter("quantity");
             String totalAmountStr = request.getParameter("totalAmount");
+
+            if (clientIdStr == null || clientIdStr.trim().isEmpty()) {
+                throw new RuntimeException("Не выбран клиент");
+            }
+            if (medicineIdStr == null || medicineIdStr.trim().isEmpty()) {
+                throw new RuntimeException("Не выбран препарат");
+            }
 
             // Создаём объект Sale
             Sale sale = new Sale();
@@ -68,10 +119,8 @@ public class SaleServlet extends HttpServlet {
             sale.setTotalAmount(new BigDecimal(totalAmountStr));
             sale.setSaleDateTime(LocalDateTime.now());
 
-            // Сохраняем через сервис
             saleService.addSale(sale);
 
-            // Перенаправляем на список с сообщением об успехе
             response.sendRedirect("sale?format=html&success=1");
 
         } catch (NumberFormatException e) {
@@ -90,9 +139,77 @@ public class SaleServlet extends HttpServlet {
         }
     }
 
+    // Метод для поиска клиентов
+    private void searchClients(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String searchTerm = request.getParameter("term");
+        PrintWriter out = response.getWriter();
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+
+        try {
+            if (searchTerm == null || searchTerm.trim().isEmpty()) {
+                out.println(mapper.writeValueAsString(userService.getAllUsers()));
+            } else {
+                out.println(mapper.writeValueAsString(userService.getClientsByName(searchTerm)));
+            }
+        } catch (Exception e) {
+            response.setStatus(500);
+            out.println("{\"error\":\"Ошибка при поиске клиентов: " + e.getMessage() + "\"}");
+        }
+    }
+
+    // Метод для поиска препаратов
+    private void searchMedicines(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String searchTerm = request.getParameter("term");
+        PrintWriter out = response.getWriter();
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+
+        try {
+            if (searchTerm == null || searchTerm.trim().isEmpty()) {
+                out.println(mapper.writeValueAsString(medicineService.getAllMedicines()));
+            } else {
+                out.println(mapper.writeValueAsString(medicineService.getMedicinesByName(searchTerm)));
+            }
+        } catch (Exception e) {
+            response.setStatus(500);
+            out.println("{\"error\":\"Ошибка при поиске препаратов: " + e.getMessage() + "\"}");
+        }
+    }
+
+    // Метод для получения цены препарата
+    private void getMedicinePrice(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String medicineIdStr = request.getParameter("id");
+        PrintWriter out = response.getWriter();
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+
+        try {
+            if (medicineIdStr == null || medicineIdStr.trim().isEmpty()) {
+                response.setStatus(400);
+                out.println("{\"error\":\"Не указан ID препарата\"}");
+                return;
+            }
+
+            int medicineId = Integer.parseInt(medicineIdStr);
+            Main.domain.Medicine medicine = medicineService.getMedicineById(medicineId);
+
+            out.println("{\"price\":\"" + medicine.getPrice() + "\", \"quantity\":\"" + medicine.getQuantityInStock() + "\"}");
+        } catch (Exception e) {
+            response.setStatus(500);
+            out.println("{\"error\":\"Ошибка при получении цены: " + e.getMessage() + "\"}");
+        }
+    }
+
     @Override
     protected void doDelete(HttpServletRequest request, HttpServletResponse response) {
         try {
+            User user = (User)request.getAttribute("sessionUser");
+
+            if(user==null || Objects.equals(user.getRole(), "user")){
+                response.sendError(401, "Для доступа к этой странице необходима авторизация");
+                return;
+            }
             String idParam = request.getParameter("id");
             System.out.println("DELETING SALE " + idParam);
 
@@ -161,6 +278,7 @@ public class SaleServlet extends HttpServlet {
 
     protected void sendJson(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
+
         PrintWriter out = ServletHelper.start(request, response);
         String idParam = request.getParameter("id");
 

@@ -9,7 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
-public class MedicineRepository {
+public class MedicineRepository implements IMedicineRepository{
     public int insert(Connection connection, Medicine medicine) throws SQLException {
         String sql = "INSERT INTO medicines (name, description, price, dosage_form, quantity_in_stock, requires_prescription) " +
                 "VALUES (?, ?, ?, ?, ?, ?)";
@@ -106,14 +106,6 @@ public class MedicineRepository {
                 return resultSet.next();
             }
         }
-    }
-    private void setMedicineParameters(PreparedStatement statement, Medicine medicine) throws SQLException {
-        statement.setString(1, medicine.getName());
-        statement.setString(2, medicine.getDescription());
-        statement.setBigDecimal(3, medicine.getPrice());
-        statement.setString(4, medicine.getDosageForm());
-        statement.setInt(5, medicine.getQuantityInStock());
-        statement.setBoolean(6, medicine.getRequiresPrescription());
     }
     private Medicine mapResultSetToMedicine(ResultSet resultSet) throws SQLException {
         return new Medicine(

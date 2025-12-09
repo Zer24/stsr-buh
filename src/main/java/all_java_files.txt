@@ -1,0 +1,2853 @@
+Объединение всех .java файлов... 
+============================================== 
+ 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\ConnectionPool.java 
+========================================== 
+ 
+package Main;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+
+public class ConnectionPool {
+    private static ConnectionPool instance;
+    private final List<Connection> availableConnections = new ArrayList<>();
+    private final List<Connection> usedConnections = new ArrayList<>();
+    private static final int MAX_CONNECTIONS = 5;
+
+    private static final String URL = "jdbc:postgresql://localhost:5432/postgres";
+    private static final String USER = "postgres";
+    private static final String PASSWORD = "";
+
+    private ConnectionPool() {
+        try {
+            Class.forName("org.postgresql.Driver");
+            initializePool();
+        } catch (ClassNotFoundException | SQLException e) {
+            throw new RuntimeException("Не удалось открыть пул соединений", e);
+        }
+    }
+
+    public static synchronized ConnectionPool getInstance() {
+        if (instance == null) {
+            instance = new ConnectionPool();
+        }
+        return instance;
+    }
+
+    private void initializePool() throws SQLException {
+        for (int i = 0; i < MAX_CONNECTIONS; i++) {
+            Connection connection = DriverManager.getConnection(URL, USER, PASSWORD);
+            connection.setAutoCommit(false);
+            availableConnections.add(connection);
+        }
+    }
+
+    public synchronized Connection getConnection() {
+        if (availableConnections.isEmpty()) {
+            throw new RuntimeException("В пуле подключений не осталось подключений");
+        }
+
+        Connection connection = availableConnections.remove(availableConnections.size() - 1);
+        usedConnections.add(connection);
+
+        return new PooledConnection(connection);
+    }
+
+    synchronized void releaseConnection(Connection realConnection) {
+        if (usedConnections.remove(realConnection)) {
+            try {
+                if (!realConnection.getAutoCommit()) {
+                    realConnection.rollback();
+                }
+                realConnection.setAutoCommit(false);
+            } catch (SQLException e) {
+                try {
+                    realConnection = DriverManager.getConnection(URL, USER, PASSWORD);
+                    realConnection.setAutoCommit(false);
+                } catch (SQLException ex) {
+                    return;
+                }
+            }
+            availableConnections.add(realConnection);
+        }
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\DatabaseConnection.java 
+========================================== 
+ 
+package Main;
+
+import java.math.BigDecimal;
+import java.sql.*;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+
+public class DatabaseConnection {
+    private static final ConnectionPool connectionPool = ConnectionPool.getInstance();
+
+    public static Connection getConnection() {
+        return connectionPool.getConnection();
+    }
+
+    public static Connection startTransaction() throws SQLException {
+        return getConnection();
+    }
+
+    public static void closeConnection(Connection connection, boolean commit) {
+        if (connection != null) {
+            try {
+                if (commit) {
+                    connection.commit();
+                } else {
+                    connection.rollback();
+                }
+                connection.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public static void addToStatement(PreparedStatement statement, ArrayList<Object> objects) throws SQLException {
+        if (objects == null) return;
+
+        for (int i = 0; i < objects.size(); i++) {
+            Object obj = objects.get(i);
+
+            switch (obj) {
+                case Integer integer -> statement.setInt(i + 1, integer);
+                case String s -> statement.setString(i + 1, s);
+                case LocalDateTime localDateTime -> statement.setTimestamp(i + 1, Timestamp.valueOf(localDateTime));
+                case BigDecimal bigDecimal -> statement.setBigDecimal(i + 1, bigDecimal);
+                case Boolean aBoolean -> statement.setBoolean(i + 1, aBoolean);
+                case Date date -> statement.setDate(i + 1, date);
+                case Time time -> statement.setTime(i + 1, time);
+                case Timestamp timestamp -> statement.setTimestamp(i + 1, timestamp);
+                case Double aDouble -> statement.setDouble(i + 1, aDouble);
+                case Float aFloat -> statement.setFloat(i + 1, aFloat);
+                case Long aLong -> statement.setLong(i + 1, aLong);
+                case Short aShort -> statement.setShort(i + 1, aShort);
+                case Byte aByte -> statement.setByte(i + 1, aByte);
+                case null -> statement.setNull(i + 1, Types.NULL);
+                default -> statement.setObject(i + 1, obj);
+            }
+        }
+    }
+
+    public static ResultSet operationQuery(String sql, Connection connection, ArrayList<Object> objects) throws SQLException {
+        PreparedStatement statement = connection.prepareStatement(sql);
+        addToStatement(statement, objects);
+        return statement.executeQuery();
+    }
+
+    public static int operationUpdate(String sql, Connection connection, ArrayList<Object> objects) throws SQLException {
+        PreparedStatement statement = connection.prepareStatement(sql);
+        addToStatement(statement, objects);
+        return statement.executeUpdate();
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\Main.java 
+========================================== 
+ 
+package Main;
+
+import Main.repositories.MedicineRepository;
+import Main.repositories.SaleRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+
+import java.sql.SQLException;
+
+public class Main {
+    public static void main(String[] args) throws SQLException, JsonProcessingException {
+        MedicineRepository repMed = new MedicineRepository();
+        SaleRepository repSal = new SaleRepository();
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        System.out.println("buhs");
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\NotFoundException.java 
+========================================== 
+ 
+package Main;
+
+public class NotFoundException extends RuntimeException{
+    public NotFoundException(String message) {
+        super(message);
+    }
+}
+ 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\PooledConnection.java 
+========================================== 
+ 
+package Main;
+
+import java.sql.*;
+import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.Executor;
+
+public class PooledConnection implements Connection {
+    private final Connection realConnection;
+    private boolean isClosed = false;
+
+    public PooledConnection(Connection realConnection) {
+        this.realConnection = realConnection;
+    }
+
+    @Override
+    public void close() {
+        if (!isClosed) {
+            isClosed = true;
+            ConnectionPool.getInstance().releaseConnection(realConnection);
+        }
+    }
+
+    @Override
+    public Statement createStatement() throws SQLException {
+        checkClosed();
+        return realConnection.createStatement();
+    }
+
+    @Override
+    public PreparedStatement prepareStatement(String sql) throws SQLException {
+        checkClosed();
+        return realConnection.prepareStatement(sql);
+    }
+
+    @Override
+    public void setAutoCommit(boolean autoCommit) throws SQLException {
+        checkClosed();
+        realConnection.setAutoCommit(autoCommit);
+    }
+
+    @Override
+    public boolean getAutoCommit() throws SQLException {
+        checkClosed();
+        return realConnection.getAutoCommit();
+    }
+
+    @Override
+    public void commit() throws SQLException {
+        checkClosed();
+        realConnection.commit();
+    }
+
+    @Override
+    public void rollback() throws SQLException {
+        checkClosed();
+        realConnection.rollback();
+    }
+
+    @Override
+    public boolean isClosed() {
+        return isClosed;
+    }
+    @Override
+    public CallableStatement prepareCall(String sql) throws SQLException {
+        return realConnection.prepareCall(sql);
+    }
+
+    @Override
+    public String nativeSQL(String sql) throws SQLException {
+        return realConnection.nativeSQL(sql);
+    }
+
+    @Override
+    public DatabaseMetaData getMetaData() throws SQLException {
+        return realConnection.getMetaData();
+    }
+
+    @Override
+    public void setReadOnly(boolean readOnly) throws SQLException {
+        realConnection.setReadOnly(readOnly);
+    }
+
+    @Override
+    public boolean isReadOnly() throws SQLException {
+        return realConnection.isReadOnly();
+    }
+
+    @Override
+    public void setCatalog(String catalog) throws SQLException {
+        realConnection.setCatalog(catalog);
+    }
+
+    @Override
+    public String getCatalog() throws SQLException {
+        return realConnection.getCatalog();
+    }
+
+    @Override
+    public void setTransactionIsolation(int level) throws SQLException {
+        realConnection.setTransactionIsolation(level);
+    }
+
+    @Override
+    public int getTransactionIsolation() throws SQLException {
+        return realConnection.getTransactionIsolation();
+    }
+
+    @Override
+    public SQLWarning getWarnings() throws SQLException {
+        return realConnection.getWarnings();
+    }
+
+    @Override
+    public void clearWarnings() throws SQLException {
+        realConnection.clearWarnings();
+    }
+
+    @Override
+    public Statement createStatement(int resultSetType, int resultSetConcurrency) throws SQLException {
+        return realConnection.createStatement(resultSetType, resultSetConcurrency);
+    }
+
+    @Override
+    public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency) throws SQLException {
+        return realConnection.prepareStatement(sql, resultSetType, resultSetConcurrency);
+    }
+
+    @Override
+    public CallableStatement prepareCall(String sql, int resultSetType, int resultSetConcurrency) throws SQLException {
+        return realConnection.prepareCall(sql, resultSetType, resultSetConcurrency);
+    }
+
+    @Override
+    public Map<String, Class<?>> getTypeMap() throws SQLException {
+        return realConnection.getTypeMap();
+    }
+
+    @Override
+    public void setTypeMap(Map<String, Class<?>> map) throws SQLException {
+        realConnection.setTypeMap(map);
+    }
+
+    @Override
+    public void setHoldability(int holdability) throws SQLException {
+        realConnection.setHoldability(holdability);
+    }
+
+    @Override
+    public int getHoldability() throws SQLException {
+        return realConnection.getHoldability();
+    }
+
+    @Override
+    public Savepoint setSavepoint() throws SQLException {
+        return realConnection.setSavepoint();
+    }
+
+    @Override
+    public Savepoint setSavepoint(String name) throws SQLException {
+        return realConnection.setSavepoint(name);
+    }
+
+    @Override
+    public void rollback(Savepoint savepoint) throws SQLException {
+        realConnection.rollback(savepoint);
+    }
+
+    @Override
+    public void releaseSavepoint(Savepoint savepoint) throws SQLException {
+        realConnection.releaseSavepoint(savepoint);
+    }
+
+    @Override
+    public Statement createStatement(int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException {
+        return realConnection.createStatement(resultSetType, resultSetConcurrency, resultSetHoldability);
+    }
+
+    @Override
+    public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException {
+        return realConnection.prepareStatement(sql, resultSetType, resultSetConcurrency, resultSetHoldability);
+    }
+
+    @Override
+    public CallableStatement prepareCall(String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException {
+        return realConnection.prepareCall(sql, resultSetType, resultSetConcurrency, resultSetHoldability);
+    }
+
+    @Override
+    public PreparedStatement prepareStatement(String sql, int autoGeneratedKeys) throws SQLException {
+        return realConnection.prepareStatement(sql, autoGeneratedKeys);
+    }
+
+    @Override
+    public PreparedStatement prepareStatement(String sql, int[] columnIndexes) throws SQLException {
+        return realConnection.prepareStatement(sql, columnIndexes);
+    }
+
+    @Override
+    public PreparedStatement prepareStatement(String sql, String[] columnNames) throws SQLException {
+        return realConnection.prepareStatement(sql, columnNames);
+    }
+
+    @Override
+    public Clob createClob() throws SQLException {
+        return realConnection.createClob();
+    }
+
+    @Override
+    public Blob createBlob() throws SQLException {
+        return realConnection.createBlob();
+    }
+
+    @Override
+    public NClob createNClob() throws SQLException {
+        return realConnection.createNClob();
+    }
+
+    @Override
+    public SQLXML createSQLXML() throws SQLException {
+        return realConnection.createSQLXML();
+    }
+
+    @Override
+    public boolean isValid(int timeout) throws SQLException {
+        return !isClosed && realConnection.isValid(timeout);
+    }
+
+    @Override
+    public void setClientInfo(String name, String value) throws SQLClientInfoException {
+        realConnection.setClientInfo(name, value);
+    }
+
+    @Override
+    public void setClientInfo(Properties properties) throws SQLClientInfoException {
+        realConnection.setClientInfo(properties);
+    }
+
+    @Override
+    public String getClientInfo(String name) throws SQLException {
+        return realConnection.getClientInfo(name);
+    }
+
+    @Override
+    public Properties getClientInfo() throws SQLException {
+        return realConnection.getClientInfo();
+    }
+
+    @Override
+    public Array createArrayOf(String typeName, Object[] elements) throws SQLException {
+        return realConnection.createArrayOf(typeName, elements);
+    }
+
+    @Override
+    public Struct createStruct(String typeName, Object[] attributes) throws SQLException {
+        return realConnection.createStruct(typeName, attributes);
+    }
+
+    @Override
+    public void setSchema(String schema) throws SQLException {
+        realConnection.setSchema(schema);
+    }
+
+    @Override
+    public String getSchema() throws SQLException {
+        return realConnection.getSchema();
+    }
+
+    @Override
+    public void abort(Executor executor) throws SQLException {
+        realConnection.abort(executor);
+    }
+
+    @Override
+    public void setNetworkTimeout(Executor executor, int milliseconds) throws SQLException {
+        realConnection.setNetworkTimeout(executor, milliseconds);
+    }
+
+    @Override
+    public int getNetworkTimeout() throws SQLException {
+        return realConnection.getNetworkTimeout();
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public <T> T unwrap(Class<T> iface) throws SQLException {
+        if (iface.isInstance(this)) {
+            return (T) this;
+        }
+        return realConnection.unwrap(iface);
+    }
+
+    @Override
+    public boolean isWrapperFor(Class<?> iface) throws SQLException {
+        return iface.isInstance(this) || realConnection.isWrapperFor(iface);
+    }
+
+    private void checkClosed() throws SQLException {
+        if (isClosed) {
+            throw new SQLException("Connection is closed");
+        }
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\ServletHelper.java 
+========================================== 
+ 
+package Main;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+import java.io.IOException;
+import java.io.PrintWriter;
+
+public class ServletHelper {
+    public static PrintWriter start(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+        return response.getWriter();
+    }
+}
+ 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\domain\Medicine.java 
+========================================== 
+ 
+package Main.domain;
+
+import java.math.BigDecimal;
+
+public class Medicine {
+    private Integer id;
+    private String name;
+    private String description;
+    private BigDecimal price;
+    private String dosageForm;
+    private Integer quantityInStock;
+    private Boolean requiresPrescription;
+
+    // конструкторы, геттеры, сеттеры
+    public Medicine() {}
+
+    public Medicine(Integer id, String name, String description, BigDecimal price,
+                    String dosageForm, Integer quantityInStock, Boolean requiresPrescription) {
+        this.id = id;
+        this.name = name;
+        this.description = description;
+        this.price = price;
+        this.dosageForm = dosageForm;
+        this.quantityInStock = quantityInStock;
+        this.requiresPrescription = requiresPrescription;
+    }
+
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public BigDecimal getPrice() {
+        return price;
+    }
+
+    public void setPrice(BigDecimal price) {
+        this.price = price;
+    }
+
+    public String getDosageForm() {
+        return dosageForm;
+    }
+
+    public void setDosageForm(String dosageForm) {
+        this.dosageForm = dosageForm;
+    }
+
+    public Integer getQuantityInStock() {
+        return quantityInStock;
+    }
+
+    public void setQuantityInStock(Integer quantityInStock) {
+        this.quantityInStock = quantityInStock;
+    }
+
+    public Boolean getRequiresPrescription() {
+        return requiresPrescription;
+    }
+
+    public void setRequiresPrescription(Boolean requiresPrescription) {
+        this.requiresPrescription = requiresPrescription;
+    }
+
+    @Override
+    public String toString() {
+        return "Medicine{" +
+                "id=" + id +
+                ", name='" + name + '\'' +
+                ", description='" + description + '\'' +
+                ", price=" + price +
+                ", dosageForm='" + dosageForm + '\'' +
+                ", quantityInStock=" + quantityInStock +
+                ", requiresPrescription=" + requiresPrescription +
+                '}';
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\domain\Sale.java 
+========================================== 
+ 
+package Main.domain;
+
+import com.fasterxml.jackson.annotation.JsonFormat;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.Date;
+
+public class Sale {
+    private Integer id;
+    private Integer clientId;
+    private Integer pharmacistId;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime saleDateTime;
+    private Integer medicineId;
+    private Integer quantity;
+    private BigDecimal totalAmount;
+
+    // Дополнительные поля для JOIN запросов
+    private String clientName;
+    private String pharmacistName;
+    private String medicineName;
+
+    // Конструкторы
+    public Sale() {}
+
+    public Sale(Integer clientId, Integer pharmacistId, Integer medicineId,
+                Integer quantity, BigDecimal totalAmount) {
+        this.clientId = clientId;
+        this.pharmacistId = pharmacistId;
+        this.medicineId = medicineId;
+        this.quantity = quantity;
+        this.totalAmount = totalAmount;
+        this.saleDateTime = LocalDateTime.now();
+    }
+
+    public Sale(Integer id, Integer clientId, Integer pharmacistId, LocalDateTime saleDateTime,
+                Integer medicineId, Integer quantity, BigDecimal totalAmount) {
+        this.id = id;
+        this.clientId = clientId;
+        this.pharmacistId = pharmacistId;
+        this.saleDateTime = saleDateTime;
+        this.medicineId = medicineId;
+        this.quantity = quantity;
+        this.totalAmount = totalAmount;
+    }
+
+    // Геттеры и сеттеры
+    public Integer getId() { return id; }
+    public void setId(Integer id) { this.id = id; }
+
+    public Integer getClientId() { return clientId; }
+    public void setClientId(Integer clientId) { this.clientId = clientId; }
+
+    public Integer getPharmacistId() { return pharmacistId; }
+    public void setPharmacistId(Integer pharmacistId) { this.pharmacistId = pharmacistId; }
+
+    // Для JSP
+    public Date getSaleDateForJSP() {
+        if (saleDateTime == null) return null;
+        return Date.from(saleDateTime.atZone(ZoneId.systemDefault()).toInstant());
+    }
+    public LocalDateTime getSaleDateTime() { return saleDateTime; }
+    public void setSaleDateTime(LocalDateTime saleDateTime) { this.saleDateTime = saleDateTime; }
+
+    public Integer getMedicineId() { return medicineId; }
+    public void setMedicineId(Integer medicineId) { this.medicineId = medicineId; }
+
+    public Integer getQuantity() { return quantity; }
+    public void setQuantity(Integer quantity) { this.quantity = quantity; }
+
+    public BigDecimal getTotalAmount() { return totalAmount; }
+    public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
+
+    // Дополнительные поля
+    public String getClientName() { return clientName; }
+    public void setClientName(String clientName) { this.clientName = clientName; }
+
+    public String getPharmacistName() { return pharmacistName; }
+    public void setPharmacistName(String pharmacistName) { this.pharmacistName = pharmacistName; }
+
+    public String getMedicineName() { return medicineName; }
+    public void setMedicineName(String medicineName) { this.medicineName = medicineName; }
+
+    @Override
+    public String toString() {
+        if (clientName != null && pharmacistName != null && medicineName != null) {
+            return String.format("Sale{id=%d, client='%s', pharmacist='%s', medicine='%s', quantity=%d, amount=%s, date=%s}",
+                    id, clientName, pharmacistName, medicineName, quantity, totalAmount, saleDateTime);
+        } else {
+            return String.format("Sale{id=%d, clientId=%d, pharmacistId=%d, medicineId=%d, quantity=%d, amount=%s, date=%s}",
+                    id, clientId, pharmacistId, medicineId, quantity, totalAmount, saleDateTime);
+        }
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\domain\User.java 
+========================================== 
+ 
+package Main.domain;
+
+public class User {
+    private Integer id;
+    private String email;
+    private String password;
+    private String name;
+    private String role;
+
+    // Конструкторы
+    public User() {}
+
+    public User(String email, String password, String name, String role) {
+        this.email = email;
+        this.password = password;
+        this.name = name;
+        this.role = role;
+    }
+
+    public User(Integer id, String email, String password, String name, String role) {
+        this.id = id;
+        this.email = email;
+        this.password = password;
+        this.name = name;
+        this.role = role;
+    }
+
+    // Геттеры и сеттеры
+    public Integer getId() { return id; }
+    public void setId(Integer id) { this.id = id; }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
+
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
+
+    @Override
+    public String toString() {
+        return String.format("User{id=%d, email='%s', name='%s', role='%s'}",
+                id, email, name, role);
+    }
+
+    // Вспомогательные методы для проверки ролей
+    public boolean isClient() {
+        return "CLIENT".equalsIgnoreCase(role);
+    }
+
+    public boolean isPharmacist() {
+        return "PHARMACIST".equalsIgnoreCase(role);
+    }
+
+    public boolean isAdmin() {
+        return "ADMIN".equalsIgnoreCase(role);
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\repositories\IMedicineRepository.java 
+========================================== 
+ 
+// Main.repositories.IMedicineRepository.java
+package Main.repositories;
+
+import Main.domain.Medicine;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.Optional;
+
+public interface IMedicineRepository {
+    int insert(Connection connection, Medicine medicine) throws SQLException;
+    Optional<Medicine> selectById(Connection connection, Integer id) throws SQLException;
+    Optional<Medicine> selectByName(String name) throws SQLException;
+    List<Medicine> selectAll(Connection connection) throws SQLException;
+    boolean update(Connection connection, Medicine medicine) throws SQLException;
+    boolean updateStockQuantity(Connection connection, Integer medicineId, Integer itemsSold) throws SQLException;
+    boolean delete(Connection connection, Integer id) throws SQLException;
+    boolean existsById(Integer id) throws SQLException;
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\repositories\IRepositoryFactory.java 
+========================================== 
+ 
+package Main.repositories;
+
+import Main.service.IMedicineService;
+import Main.service.ISaleService;
+import Main.service.IUserService;
+
+public interface IRepositoryFactory {
+    IUserRepository createUserRepository();
+    ISaleRepository createSaleRepository();
+    IMedicineRepository createMedicineRepository();
+}
+ 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\repositories\ISaleRepository.java 
+========================================== 
+ 
+// Main.repositories.ISaleRepository.java
+package Main.repositories;
+
+import Main.domain.Sale;
+import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
+public interface ISaleRepository {
+    boolean insert(Connection connection, Sale sale) throws SQLException;
+    Optional<Sale> selectById(Connection connection, Integer id) throws SQLException;
+    List<Sale> selectAll(Connection connection) throws SQLException;
+    List<Sale> SelectAllWithDetails() throws SQLException;
+    List<Sale> selectByClientId(Integer clientId) throws SQLException;
+    List<Sale> selectByDateRange(LocalDateTime startDate, LocalDateTime endDate) throws SQLException;
+    List<Sale> selectTodaySales() throws SQLException;
+    boolean update(Sale sale) throws SQLException;
+    boolean delete(Connection connection, Integer id) throws SQLException;
+    boolean existsById(Connection connection, Integer id) throws SQLException;
+    int getTotalSalesCount() throws SQLException;
+    BigDecimal getTotalRevenue() throws SQLException;
+    BigDecimal getRevenueByDateRange(LocalDateTime startDate, LocalDateTime endDate) throws SQLException;
+    List<Object[]> getMedicineSalesStatistics() throws SQLException;
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\repositories\IUserRepository.java 
+========================================== 
+ 
+// Main.repositories.IUserRepository.java
+package Main.repositories;
+
+import Main.domain.User;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.Optional;
+
+public interface IUserRepository {
+    boolean insert(Connection connection, User user) throws SQLException;
+    Optional<User> selectById(Connection connection, Integer id) throws SQLException;
+    List<User> selectAll(Connection connection) throws SQLException;
+    List<User> selectByRole(String role) throws SQLException;
+    boolean update(User user) throws SQLException;
+    boolean delete(Connection connection, Integer id) throws SQLException;
+    boolean existsById(Connection connection, Integer id) throws SQLException;
+    Optional<User> selectByEmail(Connection connection, String email) throws SQLException;
+    Optional<User> authenticate(String email, String password) throws SQLException;
+    int getTotalUserCount() throws SQLException;
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\repositories\MedicineRepository.java 
+========================================== 
+ 
+package Main.repositories;
+
+import Main.DatabaseConnection;
+import Main.domain.Medicine;
+
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
+
+public class MedicineRepository implements IMedicineRepository{
+    public int insert(Connection connection, Medicine medicine) throws SQLException {
+        String sql = "INSERT INTO medicines (name, description, price, dosage_form, quantity_in_stock, requires_prescription) " +
+                "VALUES (?, ?, ?, ?, ?, ?)";
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(medicine.getName());
+        objects.add(medicine.getDescription());
+        objects.add(medicine.getPrice());
+        objects.add(medicine.getDosageForm());
+        objects.add(medicine.getQuantityInStock());
+        objects.add(medicine.getRequiresPrescription());
+        System.out.println(medicine);
+        return DatabaseConnection.operationUpdate(sql, connection, objects);
+    }
+    public Optional<Medicine> selectById(Connection connection, Integer id) throws SQLException {
+        String sql = "SELECT * FROM medicines WHERE id = ?";
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(id);
+        try (ResultSet resultSet = DatabaseConnection.operationQuery(sql, connection, objects)) {
+            if (resultSet.next()) {
+                return Optional.of(mapResultSetToMedicine(resultSet));
+            }
+        }
+        return Optional.empty();
+    }
+    public Optional<Medicine> selectByName(String name) throws SQLException {
+        String sql = "SELECT * FROM medicines WHERE name = ?";
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setString(1, name);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (resultSet.next()) {
+                    return Optional.of(mapResultSetToMedicine(resultSet));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+    public List<Medicine> selectAll(Connection connection) throws SQLException {
+        String sql = "SELECT * FROM medicines";
+        List<Medicine> medicines = new ArrayList<>();
+        try (ResultSet resultSet = DatabaseConnection.operationQuery(sql, connection, null)) {
+            while (resultSet.next()) {
+                medicines.add(mapResultSetToMedicine(resultSet));
+            }
+        }
+        return medicines;
+    }
+    public boolean update(Connection connection, Medicine medicine) throws SQLException {
+        String sql = "UPDATE medicines SET name = ?, description = ?, price = ?, " +
+                "dosage_form = ?, quantity_in_stock = ?, requires_prescription = ? " +
+                "WHERE id = ?";
+        ArrayList<Object> objects = new ArrayList<>(Arrays.asList(medicine.getName(),
+                medicine.getDescription(),
+                medicine.getPrice(),
+                medicine.getDosageForm(),
+                medicine.getQuantityInStock(),
+                medicine.getRequiresPrescription(),
+                medicine.getId()));
+        return DatabaseConnection.operationUpdate(sql, connection, objects)>0;
+    }
+    public boolean updateStockQuantity(Connection connection, Integer medicineId, Integer itemsSold) throws SQLException {
+        String sql = "UPDATE medicines SET quantity_in_stock = quantity_in_stock - ? WHERE id = ?";
+        ArrayList<Object> objects = new ArrayList<>(Arrays.asList(itemsSold, medicineId));
+        int result = DatabaseConnection.operationUpdate(sql, connection, objects);
+        if (result > 0) {
+            System.out.println("Количество препарата ID " + medicineId + " обновлено: ");
+            return true;
+        }
+        return false;
+    }
+    public boolean delete(Connection connection, Integer id) throws SQLException {
+        String sql = "DELETE FROM medicines WHERE id = ?";
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(id);
+        int rowsAffected = DatabaseConnection.operationUpdate(sql, connection, objects);
+        if (rowsAffected > 0) {
+            System.out.println("Препарат удален: ID " + id);
+            return true;
+        }
+        return false;
+    }
+    public boolean existsById(Integer id) throws SQLException {
+        String sql = "SELECT 1 FROM medicines WHERE id = ?";
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setInt(1, id);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next();
+            }
+        }
+    }
+    private Medicine mapResultSetToMedicine(ResultSet resultSet) throws SQLException {
+        return new Medicine(
+                resultSet.getInt("id"),
+                resultSet.getString("name"),
+                resultSet.getString("description"),
+                resultSet.getBigDecimal("price"),
+                resultSet.getString("dosage_form"),
+                resultSet.getInt("quantity_in_stock"),
+                resultSet.getBoolean("requires_prescription")
+        );
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\repositories\RepositoryFactory.java 
+========================================== 
+ 
+package Main.repositories;
+
+public class RepositoryFactory implements IRepositoryFactory{
+
+    @Override
+    public IUserRepository createUserRepository() {return new UserRepository();}
+
+    @Override
+    public ISaleRepository createSaleRepository() {
+        return new SaleRepository();
+    }
+
+    @Override
+    public IMedicineRepository createMedicineRepository() {
+        return new MedicineRepository();
+    }
+}
+ 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\repositories\SaleRepository.java 
+========================================== 
+ 
+package Main.repositories;
+
+import Main.DatabaseConnection;
+import Main.domain.Sale;
+
+import java.sql.*;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
+
+public class SaleRepository implements ISaleRepository{
+
+    // CREATE - добавление новой продажи
+    public boolean insert(Connection connection, Sale sale) throws SQLException {
+        String sql = "INSERT INTO sales (client_id, pharmacist_id, sale_datetime, medicine_id, quantity, total_amount) " +
+                "VALUES (?, ?, ?, ?, ?, ?)";
+        ArrayList<Object> objects = new ArrayList<>(Arrays.asList(sale.getClientId(), sale.getPharmacistId(), sale.getSaleDateTime(), sale.getMedicineId(), sale.getQuantity(), sale.getTotalAmount()));
+        int result = DatabaseConnection.operationUpdate(sql, connection, objects);
+        if (result>0) {
+            System.out.println("Продажа добавлена: " + sale);
+            return true;
+        }
+        return false;
+    }
+    public Optional<Sale> selectById(Connection connection, Integer id) throws SQLException {
+        String sql = "SELECT s.*, " +
+                "c.name as client_name, p.name as pharmacist_name, m.name as medicine_name " +
+                "FROM sales s " +
+                "LEFT JOIN users c ON s.client_id = c.id " +
+                "LEFT JOIN users p ON s.pharmacist_id = p.id " +
+                "LEFT JOIN medicines m ON s.medicine_id = m.id "+
+                "WHERE s.id = ?";
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(id);
+        try (ResultSet resultSet = DatabaseConnection.operationQuery(sql, connection, objects);) {
+            if (resultSet.next()) {
+                return Optional.of(mapResultSetToSaleWithDetails(resultSet));
+            }
+        }
+        return Optional.empty();
+    }
+    public List<Sale> selectAll(Connection connection) throws SQLException {
+        String sql = "SELECT s.*, " +
+                "c.name as client_name, p.name as pharmacist_name, m.name as medicine_name " +
+                "FROM sales s " +
+                "LEFT JOIN users c ON s.client_id = c.id " +
+                "LEFT JOIN users p ON s.pharmacist_id = p.id " +
+                "LEFT JOIN medicines m ON s.medicine_id = m.id";
+        List<Sale> sales = new ArrayList<>();
+        try (ResultSet set = DatabaseConnection.operationQuery(sql, connection,  null)){
+            while (set.next()) {
+                sales.add(mapResultSetToSaleWithDetails(set));
+            }
+            return sales;
+        }
+    }
+    public List<Sale> SelectAllWithDetails() throws SQLException {
+        String sql = "SELECT s.*, " +
+                "c.name as client_name, p.name as pharmacist_name, m.name as medicine_name " +
+                "FROM sales s " +
+                "LEFT JOIN users c ON s.client_id = c.id " +
+                "LEFT JOIN users p ON s.pharmacist_id = p.id " +
+                "LEFT JOIN medicines m ON s.medicine_id = m.id " +
+                "ORDER BY s.sale_datetime DESC";
+
+        List<Sale> sales = new ArrayList<>();
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet resultSet = statement.executeQuery()) {
+
+            while (resultSet.next()) {
+                sales.add(mapResultSetToSaleWithDetails(resultSet));
+            }
+        }
+        return sales;
+    }
+    public List<Sale> selectByClientId(Integer clientId) throws SQLException {
+        String sql = "SELECT * FROM sales WHERE client_id = ? ORDER BY sale_datetime DESC";
+        List<Sale> sales = new ArrayList<>();
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setInt(1, clientId);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    sales.add(mapResultSetToSale(resultSet));
+                }
+            }
+        }
+        return sales;
+    }
+    public List<Sale> selectByDateRange(LocalDateTime startDate, LocalDateTime endDate) throws SQLException {
+        String sql = "SELECT * FROM sales WHERE sale_datetime BETWEEN ? AND ? ORDER BY sale_datetime DESC";
+        List<Sale> sales = new ArrayList<>();
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setTimestamp(1, Timestamp.valueOf(startDate));
+            statement.setTimestamp(2, Timestamp.valueOf(endDate));
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    sales.add(mapResultSetToSale(resultSet));
+                }
+            }
+        }
+        return sales;
+    }
+    public List<Sale> selectTodaySales() throws SQLException {
+        LocalDateTime startOfDay = LocalDateTime.now().toLocalDate().atStartOfDay();
+        LocalDateTime endOfDay = startOfDay.plusDays(1);
+        return selectByDateRange(startOfDay, endOfDay);
+    }
+    public boolean update(Sale sale) throws SQLException {
+        String sql = "UPDATE sales SET client_id = ?, pharmacist_id = ?, sale_datetime = ?, " +
+                "medicine_id = ?, quantity = ?, total_amount = ? WHERE id = ?";
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            setSaleParameters(statement, sale);
+            statement.setInt(7, sale.getId());
+
+            int rowsAffected = statement.executeUpdate();
+            if (rowsAffected > 0) {
+                System.out.println("Продажа обновлена: ID " + sale.getId());
+                return true;
+            }
+            return false;
+        }
+    }
+    public boolean delete(Connection connection, Integer id) throws SQLException {
+        String sql = "DELETE FROM sales WHERE id = ?";
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(id);
+        int result = DatabaseConnection.operationUpdate(sql, connection, objects);
+        if (result > 0) {
+            System.out.println("Продажа удалена: ID " + id);
+            return true;
+        }
+        return false;
+    }
+    public boolean existsById(Connection connection, Integer id) throws SQLException {
+        String sql = "SELECT 1 FROM sales WHERE id = ?";
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(id);
+        try (ResultSet resultSet = DatabaseConnection.operationQuery(sql, connection, objects)) {
+            return resultSet.next();
+        }
+    }
+    public int getTotalSalesCount() throws SQLException {
+        String sql = "SELECT COUNT(*) as total FROM sales";
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet resultSet = statement.executeQuery()) {
+
+            if (resultSet.next()) {
+                return resultSet.getInt("total");
+            }
+            return 0;
+        }
+    }
+    public BigDecimal getTotalRevenue() throws SQLException {
+        String sql = "SELECT SUM(total_amount) as total FROM sales";
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet resultSet = statement.executeQuery()) {
+
+            if (resultSet.next()) {
+                BigDecimal total = resultSet.getBigDecimal("total");
+                return total != null ? total : BigDecimal.ZERO;
+            }
+            return BigDecimal.ZERO;
+        }
+    }
+    public BigDecimal getRevenueByDateRange(LocalDateTime startDate, LocalDateTime endDate) throws SQLException {
+        String sql = "SELECT SUM(total_amount) as total FROM sales WHERE sale_datetime BETWEEN ? AND ?";
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setTimestamp(1, Timestamp.valueOf(startDate));
+            statement.setTimestamp(2, Timestamp.valueOf(endDate));
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (resultSet.next()) {
+                    BigDecimal total = resultSet.getBigDecimal("total");
+                    return total != null ? total : BigDecimal.ZERO;
+                }
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+    public List<Object[]> getMedicineSalesStatistics() throws SQLException {
+        String sql = "SELECT m.name, SUM(s.quantity) as total_quantity, SUM(s.total_amount) as total_revenue " +
+                "FROM sales s " +
+                "JOIN medicines m ON s.medicine_id = m.id " +
+                "GROUP BY m.id, m.name " +
+                "ORDER BY total_revenue DESC";
+
+        List<Object[]> statistics = new ArrayList<>();
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet resultSet = statement.executeQuery()) {
+
+            while (resultSet.next()) {
+                Object[] stat = new Object[3];
+                stat[0] = resultSet.getString("name");
+                stat[1] = resultSet.getInt("total_quantity");
+                stat[2] = resultSet.getBigDecimal("total_revenue");
+                statistics.add(stat);
+            }
+        }
+        return statistics;
+    }
+    private void setSaleParameters(PreparedStatement statement, Sale sale) throws SQLException {
+        statement.setInt(1, sale.getClientId());
+        statement.setInt(2, sale.getPharmacistId());
+        statement.setTimestamp(3, Timestamp.valueOf(
+                sale.getSaleDateTime() != null ? sale.getSaleDateTime() : LocalDateTime.now()
+        ));
+        statement.setInt(4, sale.getMedicineId());
+        statement.setInt(5, sale.getQuantity());
+        statement.setBigDecimal(6, sale.getTotalAmount());
+    }
+    private Sale mapResultSetToSale(ResultSet resultSet) throws SQLException {
+        Timestamp timestamp = resultSet.getTimestamp("sale_datetime");
+        LocalDateTime saleDateTime = timestamp != null ? timestamp.toLocalDateTime() : null;
+
+        return new Sale(
+                resultSet.getInt("id"),
+                resultSet.getInt("client_id"),
+                resultSet.getInt("pharmacist_id"),
+                saleDateTime,
+                resultSet.getInt("medicine_id"),
+                resultSet.getInt("quantity"),
+                resultSet.getBigDecimal("total_amount")
+        );
+    }
+    private Sale mapResultSetToSaleWithDetails(ResultSet resultSet) throws SQLException {
+        Sale sale = mapResultSetToSale(resultSet);
+
+        // Устанавливаем дополнительные поля из JOIN
+        sale.setClientName(resultSet.getString("client_name"));
+        sale.setPharmacistName(resultSet.getString("pharmacist_name"));
+        sale.setMedicineName(resultSet.getString("medicine_name"));
+
+        return sale;
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\repositories\UserRepository.java 
+========================================== 
+ 
+package Main.repositories;
+
+import Main.DatabaseConnection;
+import Main.domain.User;
+
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+public class UserRepository implements IUserRepository{
+    public boolean insert(Connection connection, User user) throws SQLException {
+        String sql = "INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)";
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(user.getEmail());
+        objects.add(user.getPassword());
+        objects.add(user.getName());
+        objects.add(user.getRole());
+        try {
+            int result = DatabaseConnection.operationUpdate(sql, connection, objects);
+            System.out.println("Пользователь добавлен: " + user.getEmail() + " (ID: " + user.getId() + ")");
+            return result==1;
+        }catch (Exception e){
+            throw new RuntimeException("Не удалось добавить пользователя", e);
+        }
+    }
+    public Optional<User> selectById(Connection connection, Integer id) throws SQLException {
+        String sql = "SELECT * FROM users WHERE id = ?";
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(id);
+        try (ResultSet resultSet = DatabaseConnection.operationQuery(sql, connection, objects)) {
+            if (resultSet.next()) {
+                return Optional.of(mapResultSetToUser(resultSet));
+            }
+        }
+        return Optional.empty();
+    }
+    public List<User> selectAll(Connection connection) throws SQLException {
+        String sql = "SELECT * FROM users ORDER BY name";
+        List<User> users = new ArrayList<>();
+        try (ResultSet resultSet = DatabaseConnection.operationQuery(sql, connection, null)) {
+            while (resultSet.next()) {
+                users.add(mapResultSetToUser(resultSet));
+            }
+        }
+        return users;
+    }
+    public List<User> selectByRole(String role) throws SQLException {
+        String sql = "SELECT * FROM users WHERE role = ? ORDER BY name";
+        List<User> users = new ArrayList<>();
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setString(1, role.toUpperCase());
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    users.add(mapResultSetToUser(resultSet));
+                }
+            }
+        }
+        return users;
+    }
+    public boolean update(User user) throws SQLException {
+        String sql = "UPDATE users SET email = ?, password = ?, name = ?, role = ? WHERE id = ?";
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            setUserParameters(statement, user);
+            statement.setInt(5, user.getId());
+
+            int rowsAffected = statement.executeUpdate();
+            if (rowsAffected > 0) {
+                System.out.println("Пользователь обновлен: " + user.getEmail());
+                return true;
+            }
+            return false;
+        }
+    }
+    public boolean delete(Connection connection, Integer id) throws SQLException {
+        String sql = "DELETE FROM users WHERE id = ?";
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(id);
+        int result = DatabaseConnection.operationUpdate(sql, connection, objects);
+        if (result > 0) {
+            System.out.println("Пользователь удален: ID " + id);
+            return true;
+        }
+        return false;
+    }
+    public boolean existsById(Connection connection, Integer id) throws SQLException {
+        String sql = "SELECT 1 FROM users WHERE id = ?";
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(id);
+        try (ResultSet resultSet = DatabaseConnection.operationQuery(sql, connection, objects)) {
+            return resultSet.next();
+        }
+    }
+    public Optional<User> selectByEmail(Connection connection, String email) throws SQLException {
+        String sql = "SELECT * FROM users WHERE email = ?";
+        ArrayList<Object> objects = new ArrayList<>();
+        objects.add(email);
+        try (ResultSet resultSet = DatabaseConnection.operationQuery(sql, connection, objects)) {
+            if(resultSet.next()) {
+                return Optional.of(mapResultSetToUser(resultSet));
+            }else{
+                return Optional.empty();
+            }
+        }
+    }
+    public Optional<User> authenticate(String email, String password) throws SQLException {
+        String sql = "SELECT * FROM users WHERE email = ? AND password = ?";
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setString(1, email);
+            statement.setString(2, password);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (resultSet.next()) {
+                    return Optional.of(mapResultSetToUser(resultSet));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+    public int getTotalUserCount() throws SQLException {
+        String sql = "SELECT COUNT(*) as total FROM users";
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet resultSet = statement.executeQuery()) {
+
+            if (resultSet.next()) {
+                return resultSet.getInt("total");
+            }
+            return 0;
+        }
+    }
+    private void setUserParameters(PreparedStatement statement, User user) throws SQLException {
+        statement.setString(1, user.getEmail());
+        statement.setString(2, user.getPassword());
+        statement.setString(3, user.getName());
+        statement.setString(4, user.getRole().toUpperCase());
+    }
+    private User mapResultSetToUser(ResultSet resultSet) throws SQLException {
+        return new User(
+                resultSet.getInt("id"),
+                resultSet.getString("email"),
+                resultSet.getString("password"),
+                resultSet.getString("name"),
+                resultSet.getString("role")
+        );
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\service\IMedicineService.java 
+========================================== 
+ 
+// Main.service.IMedicineService.java
+package Main.service;
+
+import Main.domain.Medicine;
+import java.util.List;
+
+public interface IMedicineService {
+    void addMedicine(Medicine medicine);
+    void updateMedicine(Medicine medicine);
+    void deleteMedicine(int id);
+    boolean updateMedicineStock(Integer medicineId, Integer newQuantity);
+    List<Medicine> getAllMedicines();
+    Medicine getMedicineById(Integer id);
+    List<Medicine> getMedicinesByName(String name);
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\service\ISaleService.java 
+========================================== 
+ 
+// Main.service.ISaleService.java
+package Main.service;
+
+import Main.domain.Sale;
+import java.util.List;
+
+public interface ISaleService {
+    void addSale(Sale sale);
+    List<Sale> getAllSales();
+    Sale getSaleById(Integer id);
+    void deleteSale(int id);
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\service\IServiceFactory.java 
+========================================== 
+ 
+// Main.factories.IServiceFactory.java
+package Main.service;
+
+import Main.service.IUserService;
+// Другие сервисы добавьте по мере необходимости
+
+public interface IServiceFactory {
+    IUserService createUserService();
+    ISaleService createSaleService();
+    IMedicineService createMedicineService();
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\service\IUserService.java 
+========================================== 
+ 
+// Main.service.IUserService.java
+package Main.service;
+
+import Main.domain.User;
+import java.util.List;
+
+public interface IUserService {
+    List<User> getAllUsers();
+    User getUserById(Integer id);
+    void addUser(User user);
+    void deleteUser(int id);
+    User getUserByEmail(String email);
+    List<User> getClientsByName(String name);
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\service\MedicineService.java 
+========================================== 
+ 
+package Main.service;
+
+import Main.DatabaseConnection;
+import Main.NotFoundException;
+import Main.domain.Medicine;
+import Main.repositories.IMedicineRepository;
+import Main.repositories.MedicineRepository;
+import Main.repositories.RepositoryFactory;
+
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+public class MedicineService implements IMedicineService{
+    private IMedicineRepository medicineRepository;
+
+    public MedicineService(IMedicineRepository medicineRepository) {
+        this.medicineRepository = medicineRepository;
+    }
+
+    public void addMedicine(Medicine medicine) {
+        Connection connection = null;
+        try {
+            connection = DatabaseConnection.startTransaction();
+            if(medicine.getName().length()==0){
+                throw new RuntimeException("Препарат должен иметь название!");
+            }
+            if (medicineRepository.selectByName(medicine.getName()).isPresent()) {
+                throw new RuntimeException("Лекарство с названием '" + medicine.getName() + "' уже существует");
+            }
+            int added = medicineRepository.insert(connection, medicine);
+            if(added==0){
+                throw new RuntimeException("Изменений не произошло по неизвестной причине");
+            }
+            System.out.println("Добавлено новое лекарство: " + medicine.getName());
+
+            DatabaseConnection.closeConnection(connection, true);
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException("Ошибка при добавлении лекарства: " + e.getMessage(), e);
+        }
+    }
+    public void updateMedicine(Medicine medicine) {
+        Connection connection = null;
+        try {
+            connection = DatabaseConnection.startTransaction();
+            if(medicine.getName().length()==0){
+                throw new RuntimeException("Препарат должен иметь название!");
+            }
+            medicineRepository.update(connection, medicine);
+
+            System.out.println("Добавлено новое лекарство: " + medicine.getName());
+
+            DatabaseConnection.closeConnection(connection, true);
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException("Ошибка при добавлении лекарства: " + e.getMessage(), e);
+        }
+    }
+    public void deleteMedicine(int id){
+        Connection connection = null;
+        try{
+            connection = DatabaseConnection.startTransaction();
+            if(id<0){
+                throw new RuntimeException("id меньше нуля");
+            }
+            if(!medicineRepository.existsById(id)){
+                throw new RuntimeException("Препарата с таким id не существует");
+            }
+            medicineRepository.delete(connection, id);
+            DatabaseConnection.closeConnection(connection, true);
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException(e);
+        }
+    }
+    public boolean updateMedicineStock(Integer medicineId, Integer newQuantity) {
+        Connection connection = null;
+        try {
+            connection = DatabaseConnection.startTransaction();
+            Optional<Medicine> medicineOpt = medicineRepository.selectById(connection, medicineId);
+            if (medicineOpt.isEmpty()) {throw new RuntimeException("Лекарство с ID " + medicineId + " не найдено");}
+            if (newQuantity < 0) {throw new RuntimeException("Количество не может быть отрицательным");}
+            boolean updated = medicineRepository.updateStockQuantity(connection, medicineId, newQuantity);
+            connection.commit();
+            DatabaseConnection.closeConnection(connection, true);
+            return updated;
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException("Ошибка при обновлении запаса: " + e.getMessage(), e);
+        }
+    }
+    public List<Medicine> getAllMedicines() {
+        Connection connection = null;
+        try{
+            connection = DatabaseConnection.startTransaction();
+            List<Medicine> medicines = medicineRepository.selectAll(connection);
+            DatabaseConnection.closeConnection(connection, true);
+            return medicines;
+        }catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException("Ошибка при получении списка лекарств "+e.getMessage(), e);
+        }
+    }
+
+    public Medicine getMedicineById(Integer id) {
+        Connection connection = null;
+        try {
+            connection = DatabaseConnection.startTransaction();
+            Optional<Medicine> medicine = medicineRepository.selectById(connection, id);
+            if(medicine.isEmpty()){
+                DatabaseConnection.closeConnection(connection, false);
+                throw new NotFoundException("Не найдено препарата с таким ID");
+            }
+            DatabaseConnection.closeConnection(connection,true);
+            return medicine.get();
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection,false);
+            throw new RuntimeException("Ошибка при поиске лекарства: "+e.getMessage() , e);
+        }
+    }
+    public List<Medicine> getMedicinesByName(String name) {
+        Connection connection = null;
+        try {
+            connection = DatabaseConnection.startTransaction();
+            List<Medicine> allMedicines = medicineRepository.selectAll(connection);
+            DatabaseConnection.closeConnection(connection, true);
+
+            return allMedicines.stream()
+                    .filter(medicine -> {
+                        String medicineName = medicine.getName().toLowerCase();
+                        String searchName = name.toLowerCase();
+                        return medicineName.contains(searchName);
+                    })
+                    .collect(Collectors.toList());
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException("Ошибка при поиске препаратов: " + e.getMessage(), e);
+        }
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\service\SaleService.java 
+========================================== 
+ 
+package Main.service;
+
+import Main.DatabaseConnection;
+import Main.NotFoundException;
+import Main.domain.Medicine;
+import Main.domain.Sale;
+import Main.repositories.*;
+
+import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.Optional;
+
+public class SaleService implements ISaleService{
+    private ISaleRepository saleRepository;
+    private IMedicineRepository medicineRepository;
+    private IUserRepository userRepository;
+
+    public SaleService(ISaleRepository saleRepository,
+                       IMedicineRepository medicineRepository,
+                       IUserRepository userRepository) {
+        this.saleRepository = saleRepository;
+        this.medicineRepository = medicineRepository;
+        this.userRepository = userRepository;
+    }
+
+    public void addSale(Sale sale) {
+        Connection connection = null;
+        try {
+            // Получаем соединение (начало транзакции)
+            connection = DatabaseConnection.startTransaction();
+
+            if(sale.getClientId()==null || sale.getMedicineId()==null || sale.getPharmacistId()==null){throw new RuntimeException("Вместо значений полей получено null");}
+            if(userRepository.selectById(connection,sale.getPharmacistId()).get().isClient()){
+                throw new RuntimeException("Пользователь не может продавать препараты");
+            }
+            if(sale.getQuantity()<=0){throw new RuntimeException("Нельзя продать неположительное число препарата");}
+            if(sale.getTotalAmount().compareTo(BigDecimal.valueOf(0))==-1){throw new RuntimeException("Продажа с отрицательной выручкой");}
+
+            if(medicineRepository.selectById(connection, sale.getMedicineId()).get().getQuantityInStock()<sale.getQuantity()){throw new RuntimeException("Нельзя продать больше препаратов чем есть в наличии");}
+
+            if(!medicineRepository.updateStockQuantity(connection, sale.getMedicineId(), sale.getQuantity())){throw new RuntimeException("Произошла ошибка при изменении числа препаратов в наличии");}
+
+            if(!saleRepository.insert(connection, sale)){throw new RuntimeException("Ошибка при сохранении ");}
+
+            DatabaseConnection.closeConnection(connection, true);
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException("Ошибка при добавлении лекарства: " + e.getMessage(), e);
+        }
+    }
+    // Простые методы без сложной логики могут не требовать явного управления транзакциями
+    public List<Sale> getAllSales() {
+        Connection connection = null;
+        try{
+            connection = DatabaseConnection.startTransaction();
+            List<Sale> sales = saleRepository.selectAll(connection);
+            DatabaseConnection.closeConnection(connection, true);
+            return sales;
+        }catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException("Ошибка при получении списка лекарств "+e.getMessage(), e);
+        }
+    }
+
+    public Sale getSaleById(Integer id) {
+        Connection connection = null;
+        try {
+            connection = DatabaseConnection.startTransaction();
+            Optional<Sale> sale = saleRepository.selectById(connection, id);
+            if(sale.isEmpty()){
+                DatabaseConnection.closeConnection(connection, false);
+                throw new NotFoundException("Не найдено продажи с таким ID");
+            }
+            return sale.get();
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException("Ошибка при поиске лекарства", e);
+        }
+    }
+
+    public void deleteSale(int id){
+        Connection connection = null;
+        try{
+            connection = DatabaseConnection.startTransaction();
+            if(!saleRepository.existsById(connection, id)){
+                throw new RuntimeException("Пользователя с таким id не существует");
+            }
+            if(saleRepository.delete(connection, id)){
+                DatabaseConnection.closeConnection(connection, true);
+            }
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException(e);
+        }
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\service\ServiceFactory.java 
+========================================== 
+ 
+// Main.factories.ServiceFactory.java
+package Main.service;
+
+import Main.repositories.IUserRepository;
+import Main.repositories.RepositoryFactory;
+import Main.repositories.UserRepository;
+import Main.service.IUserService;
+import Main.service.UserService;
+// Другие импорты по мере необходимости
+
+public class ServiceFactory implements IServiceFactory {
+    private final IUserRepository userRepository;
+    public ServiceFactory() {
+        this.userRepository = new UserRepository();
+    }
+
+    @Override
+    public IUserService createUserService() {
+        return new UserService(new RepositoryFactory().createUserRepository());
+    }
+    @Override
+    public IMedicineService createMedicineService() {
+        return new MedicineService(new RepositoryFactory().createMedicineRepository());
+    }
+    @Override
+    public ISaleService createSaleService() {
+        RepositoryFactory factory = new RepositoryFactory();
+        return new SaleService(factory.createSaleRepository(), factory.createMedicineRepository(), factory.createUserRepository());
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\service\UserService.java 
+========================================== 
+ 
+package Main.service;
+
+import Main.DatabaseConnection;
+import Main.NotFoundException;
+import Main.domain.User;
+import Main.repositories.IUserRepository;
+import Main.repositories.RepositoryFactory;
+import Main.repositories.UserRepository;
+
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+public class UserService implements IUserService{
+    private IUserRepository userRepository;
+
+    public UserService(IUserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+
+    public List<User> getAllUsers() {
+        Connection connection = null;
+        try{
+            connection = DatabaseConnection.startTransaction();
+            List<User> users = userRepository.selectAll(connection);
+            DatabaseConnection.closeConnection(connection, true);
+            return users;
+        }catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException("Ошибка при получении списка пользователей "+e.getMessage(), e);
+        }
+    }
+
+    public User getUserById(Integer id) {
+        Connection connection = null;
+        try {
+            connection = DatabaseConnection.startTransaction();
+            Optional<User> user = userRepository.selectById(connection, id);
+            if(user.isEmpty()){
+                DatabaseConnection.closeConnection(connection, false);
+                throw new NotFoundException("Не найдено пользователя с таким ID");
+            }
+            DatabaseConnection.closeConnection(connection,true);
+            return user.get();
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection,false);
+            throw new RuntimeException("Ошибка при поиске пользователя", e);
+        }
+    }
+    public void addUser(User user){
+        Connection connection = null;
+        try{
+            connection = DatabaseConnection.startTransaction();
+            if(userRepository.selectByEmail(connection, user.getEmail()).isPresent()){
+                throw new RuntimeException("Пользователь с такой почтой уже существует");
+            }
+            if(userRepository.insert(connection, user)){
+                DatabaseConnection.closeConnection(connection, true);
+            }
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException(e);
+        }
+    }
+    public void deleteUser(int id){
+        Connection connection = null;
+        try{
+            connection = DatabaseConnection.startTransaction();
+            if(!userRepository.existsById(connection, id)){
+                throw new RuntimeException("Пользователя с таким id не существует");
+            }
+            if(userRepository.delete(connection, id)){
+                DatabaseConnection.closeConnection(connection, true);
+            }
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException(e);
+        }
+    }
+
+    public User getUserByEmail(String email) {
+        Connection connection = null;
+        try{
+            connection = DatabaseConnection.startTransaction();
+            Optional<User> user = userRepository.selectByEmail(connection, email);
+            return user.orElse(null);
+        } catch (SQLException e) {
+            throw new RuntimeException("Не удалось получить пользователя: "+e.getMessage(), e);
+        }
+    }
+    public List<User> getClientsByName(String name) {
+        Connection connection = null;
+        try {
+            connection = DatabaseConnection.startTransaction();
+            List<User> allUsers = userRepository.selectAll(connection);
+            DatabaseConnection.closeConnection(connection, true);
+
+            // Фильтруем клиентов по имени/фамилии
+            return allUsers.stream()
+                    .filter(user -> {
+                        String fullName = user.getName().toLowerCase();
+                        String searchName = name.toLowerCase();
+                        return fullName.contains(searchName);
+                    })
+                    .collect(Collectors.toList());
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException("Ошибка при поиске клиентов: " + e.getMessage(), e);
+        }
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\servlet\LoginServlet.java 
+========================================== 
+ 
+package Main.servlet;
+
+import Main.domain.User;
+import Main.service.IUserService;
+import Main.service.ServiceFactory;
+import Main.service.UserService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+
+import java.io.IOException;
+import java.util.Objects;
+
+@WebServlet("/login")
+public class LoginServlet extends HttpServlet {
+    private IUserService userService;
+
+    @Override
+    public void init() {
+        this.userService = new ServiceFactory().createUserService();
+    }
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        System.out.println("login doGet()");
+        String action = request.getParameter("action");
+        if(action==null || action.equals("login")) {
+            response.sendRedirect("login.jsp");
+        }else{
+            HttpSession session = request.getSession();
+            session.removeAttribute("sessionUser");
+            response.sendRedirect("index.jsp");
+        }
+    }
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String email = request.getParameter("email");
+        String password = request.getParameter("password");
+        System.out.println("login doPost() "+email+" "+password);
+
+        User user = userService.getUserByEmail(email);
+        if (!Objects.equals(user.getPassword(), password)) {
+            response.sendError(400, "Пароль не совпадает");
+            return;
+        }
+        HttpSession session = request.getSession();
+        session.setAttribute("sessionUser", user);
+        session.setMaxInactiveInterval(30 * 60);
+
+        response.sendRedirect("index.jsp");
+    }
+}
+ 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\servlet\MedicineServlet.java 
+========================================== 
+ 
+package Main.servlet;
+
+import Main.NotFoundException;
+import Main.ServletHelper;
+import Main.domain.Medicine;
+import Main.domain.User;
+import Main.service.IMedicineService;
+import Main.service.MedicineService;
+import Main.service.ServiceFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.util.Objects;
+
+@WebServlet("/medicine")
+public class MedicineServlet extends HttpServlet {
+    IMedicineService medicineService;
+    ObjectMapper mapper;
+    @Override
+    public void init() {
+        this.medicineService = new ServiceFactory().createMedicineService();
+        mapper = new ObjectMapper();
+    }
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            String action = request.getParameter("action");
+            String idParam = request.getParameter("id");
+            System.out.println("medicine doGet() "+action);
+            if(action==null || action.equals("get")){
+                if (Objects.equals(request.getParameter("format"), "json")) {
+                    PrintWriter out = ServletHelper.start(request, response);
+                    try {
+                        if (idParam == null) {
+                            out.println(mapper.writeValueAsString(medicineService.getAllMedicines()));
+                        } else {
+                            int id = Integer.parseInt(idParam);
+                            Medicine medicine = medicineService.getMedicineById(id);
+                            out.println(mapper.writeValueAsString(medicine));
+                        }
+                    } catch (NumberFormatException e) {
+                        response.setStatus(400);
+                        out.println("Ошибка: ID должен быть числом!");
+                    } catch (NotFoundException e) {
+                        response.setStatus(404);
+                        out.println(e.getMessage());
+                    }
+                    out.close();
+                } else {
+                    if (idParam != null) {
+                        int id = Integer.parseInt(idParam);
+                        Medicine medicine = medicineService.getMedicineById(id);
+                        request.setAttribute("medicine", medicine);
+                        request.getRequestDispatcher("/medicine-details.jsp").forward(request, response);
+                    } else {
+                        request.setAttribute("medicines", medicineService.getAllMedicines());
+                        request.getRequestDispatcher("/medicine-list.jsp").forward(request, response);
+                    }
+                }
+                return;
+            }
+
+            switch (action){
+                default -> request.getRequestDispatcher("/medicine-list.jsp").forward(request, response);
+                case "edit" -> {
+                    User user = (User)request.getAttribute("sessionUser");
+
+                    if(user==null || Objects.equals(user.getRole(), "user")){
+                        response.sendError(401, "Для доступа к этой странице необходима авторизация");
+                        return;
+                    }
+                    if (idParam != null && !idParam.trim().isEmpty()) {
+                        Integer id = Integer.parseInt(idParam);
+                        Medicine medicine = medicineService.getMedicineById(id);
+
+                        if (medicine == null) {
+                            response.sendError(404, "Препарат с таким id не найден");
+                            return;
+                        }
+                        request.setAttribute("medicine", medicine);
+
+                        request.getRequestDispatcher("/medicine-change.jsp").forward(request, response);
+                    } else {
+                        response.sendRedirect("medicine?&error=Не указан ID препарата");
+                    }
+                }
+                case "add" -> request.getRequestDispatcher("/medicine-add.jsp").forward(request, response);
+            }
+        } catch (Exception e) {
+            try {
+                e.printStackTrace();
+                response.sendError(500, e.getMessage());
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+    }
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            String action = request.getParameter("action");
+            String idParam = request.getParameter("id");
+            System.out.println("medicine doPost() "+action);
+
+            User user = (User)request.getAttribute("sessionUser");
+
+            if(user==null || Objects.equals(user.getRole(), "user")){
+                response.sendError(401, "Для доступа к этой странице необходима авторизация");
+                return;
+            }
+
+            String name = request.getParameter("name");
+            String description = request.getParameter("description");
+            String priceStr = request.getParameter("price");
+            String dosageForm = request.getParameter("dosageForm");
+            String quantityStr = request.getParameter("quantityInStock");
+            String requiresPrescription = request.getParameter("requiresPrescription");
+
+            if (name == null || name.trim().isEmpty()) {
+                response.sendError(400, "Название обязательно для заполнения");
+                return;
+            }
+
+            if (priceStr == null || priceStr.trim().isEmpty()) {
+                response.sendError(400, "Цена обязательна для заполнения");
+                return;
+            }
+
+            try {
+                BigDecimal price = new BigDecimal(priceStr);
+                if (price.compareTo(BigDecimal.ZERO) < 0) {
+                    response.sendError(400, "Цена не может быть отрицательной");
+                    return;
+                }
+            } catch (NumberFormatException e) {
+                response.sendError(400, "Некорректный формат цены");
+                return;
+            }
+
+            if (quantityStr == null || quantityStr.trim().isEmpty()) {
+                response.sendError(400, "medicine?format=html&error=Количество обязательно для заполнения");
+                return;
+            }
+
+            if ("update".equals(action) && idParam != null && !idParam.trim().isEmpty()) {
+                Integer id = Integer.parseInt(idParam);
+
+                // Создаём объект Medicine с ID
+                Medicine medicine = new Medicine();
+                medicine.setId(id);
+                medicine.setName(name.trim());
+                medicine.setDescription(description != null ? description.trim() : "");
+                medicine.setPrice(new BigDecimal(priceStr));
+                medicine.setDosageForm(dosageForm != null ? dosageForm.trim() : "");
+                medicine.setQuantityInStock(Integer.parseInt(quantityStr));
+                medicine.setRequiresPrescription(requiresPrescription != null && requiresPrescription.equals("on"));
+
+                medicineService.updateMedicine(medicine);
+            } else {
+                // ДОБАВЛЕНИЕ нового препарата (оригинальная логика)
+                Medicine medicine = new Medicine();
+                medicine.setName(name.trim());
+                medicine.setDescription(description != null ? description.trim() : "");
+                medicine.setPrice(new BigDecimal(priceStr));
+                medicine.setDosageForm(dosageForm != null ? dosageForm.trim() : "");
+                medicine.setQuantityInStock(Integer.parseInt(quantityStr));
+                medicine.setRequiresPrescription(requiresPrescription != null && requiresPrescription.equals("on"));
+
+                // Сохраняем через сервис
+                medicineService.addMedicine(medicine);
+
+                // Перенаправляем на список с сообщением об успехе
+                response.sendRedirect("medicine?format=html&success=1");
+            }
+
+        } catch (Exception e) {
+            try {
+                e.printStackTrace();
+                // Определяем, куда перенаправить в случае ошибки
+                String idParam = request.getParameter("id");
+                if (idParam != null && !idParam.trim().isEmpty()) {
+                    // Ошибка при редактировании - возвращаем на страницу редактирования
+                    response.sendRedirect("medicine?format=html&action=edit&id=" + idParam +
+                            "&error=" + URLEncoder.encode(e.getMessage(), "UTF-8"));
+                } else {
+                    // Ошибка при добавлении - возвращаем на страницу добавления
+                    // Здесь можно сохранить введенные данные для повторного заполнения формы
+                    String referer = request.getHeader("Referer");
+                    if (referer != null && referer.contains("add")) {
+                        response.sendRedirect("medicine?format=html&action=add&error=" +
+                                URLEncoder.encode(e.getMessage(), "UTF-8"));
+                    } else {
+                        response.sendRedirect("medicine?format=html&error=" +
+                                URLEncoder.encode(e.getMessage(), "UTF-8"));
+                    }
+                }
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+    }
+    @Override
+    protected void doDelete(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            User user = (User)request.getAttribute("sessionUser");
+
+            if(user==null || Objects.equals(user.getRole(), "user")){
+                response.sendError(401, "Для доступа к этой странице необходима авторизация");
+                return;
+            }
+            String idParam = request.getParameter("id");
+            System.out.println("DELETING "+idParam);
+            if (idParam == null) {
+                System.out.println("Получен запрос на удаление без id");
+                return;
+            }
+
+            int id = Integer.parseInt(idParam);
+            medicineService.deleteMedicine(id);
+
+            // Перенаправляем обратно на список с сообщением об успехе
+            response.sendRedirect("medicine?format=html&deleted=1");
+
+        } catch (NumberFormatException e) {
+            try {
+                response.sendError(400, "ID должен быть числом");
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        } catch (NotFoundException e) {
+            try {
+                response.sendError(404, e.getMessage());
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        } catch (Exception e) {
+            try {
+                response.sendError(500, "Ошибка при удалении: " + e.getMessage());
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\servlet\SaleServlet.java 
+========================================== 
+ 
+package Main.servlet;
+
+import Main.NotFoundException;
+import Main.ServletHelper;
+import Main.domain.Sale;
+import Main.domain.User;
+import Main.service.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Objects;
+
+@WebServlet("/sale")
+public class SaleServlet extends HttpServlet {
+    private ISaleService saleService;
+    private IUserService userService;
+    private IMedicineService medicineService;
+    private ObjectMapper mapper;
+
+    @Override
+    public void init() {
+        IServiceFactory serviceFactory = new ServiceFactory();
+        this.saleService = serviceFactory.createSaleService();
+        this.userService = serviceFactory.createUserService();
+        this.medicineService = serviceFactory.createMedicineService();
+        mapper = new ObjectMapper();
+        mapper.findAndRegisterModules();
+    }
+
+    protected void showCreateForm(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        try {
+            request.setAttribute("clients", userService.getAllUsers());
+            request.setAttribute("medicines", medicineService.getAllMedicines());
+            request.getRequestDispatcher("/sale-form.jsp").forward(request, response);
+        } catch (Exception e) {
+            request.setAttribute("error", "Ошибка при загрузке данных: " + e.getMessage());
+            request.getRequestDispatcher("/error.jsp").forward(request, response);
+        }
+    }
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            HttpSession session = request.getSession(false);
+            User user = (User)session.getAttribute("sessionUser");
+
+            if(user==null || Objects.equals(user.getRole(), "user")){
+                response.sendError(401, "Для доступа к этой странице необходима авторизация");
+                return;
+            }
+
+            String action = request.getParameter("action");
+            if ("searchClients".equals(action)) {
+                searchClients(request, response);
+                return;
+            } else if ("searchMedicines".equals(action)) {
+                searchMedicines(request, response);
+                return;
+            } else if ("getMedicinePrice".equals(action)) {
+                getMedicinePrice(request, response);
+                return;
+            }
+
+            if (Objects.equals(request.getParameter("format"), "json")) {
+                sendJson(request, response);
+            } else {
+                sendJSP(request, response);
+            }
+        } catch (Exception e) {
+            try {
+                e.printStackTrace();
+                response.sendError(500, "Ошибка: " + e.getMessage());
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+    }
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            HttpSession session = request.getSession(false);
+            User user = (User)session.getAttribute("sessionUser");
+
+            if(user==null || Objects.equals(user.getRole(), "user")){
+                response.sendError(401, "Для доступа к этой странице необходима авторизация");
+                return;
+            }
+
+            String clientIdStr = request.getParameter("clientId");
+            String pharmacistIdStr = request.getParameter("pharmacistId");
+            String medicineIdStr = request.getParameter("medicineId");
+            String quantityStr = request.getParameter("quantity");
+            String totalAmountStr = request.getParameter("totalAmount");
+
+            if (clientIdStr == null || clientIdStr.trim().isEmpty()) {
+                throw new RuntimeException("Не выбран клиент");
+            }
+            if (medicineIdStr == null || medicineIdStr.trim().isEmpty()) {
+                throw new RuntimeException("Не выбран препарат");
+            }
+
+            // Создаём объект Sale
+            Sale sale = new Sale();
+            sale.setClientId(Integer.parseInt(clientIdStr));
+            sale.setPharmacistId(Integer.parseInt(pharmacistIdStr));
+            sale.setMedicineId(Integer.parseInt(medicineIdStr));
+            sale.setQuantity(Integer.parseInt(quantityStr));
+            sale.setTotalAmount(new BigDecimal(totalAmountStr));
+            sale.setSaleDateTime(LocalDateTime.now());
+
+            saleService.addSale(sale);
+
+            response.sendRedirect("sale?format=html&success=1");
+
+        } catch (NumberFormatException e) {
+            try {
+                response.sendError(400, "Некорректный формат числа: " + e.getMessage());
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        } catch (Exception e) {
+            try {
+                e.printStackTrace();
+                response.sendError(500, "Ошибка при создании продажи: " + e.getMessage());
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+    }
+
+    // Метод для поиска клиентов
+    private void searchClients(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String searchTerm = request.getParameter("term");
+        PrintWriter out = response.getWriter();
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+
+        try {
+            if (searchTerm == null || searchTerm.trim().isEmpty()) {
+                out.println(mapper.writeValueAsString(userService.getAllUsers()));
+            } else {
+                out.println(mapper.writeValueAsString(userService.getClientsByName(searchTerm)));
+            }
+        } catch (Exception e) {
+            response.setStatus(500);
+            out.println("{\"error\":\"Ошибка при поиске клиентов: " + e.getMessage() + "\"}");
+        }
+    }
+
+    // Метод для поиска препаратов
+    private void searchMedicines(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String searchTerm = request.getParameter("term");
+        PrintWriter out = response.getWriter();
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+
+        try {
+            if (searchTerm == null || searchTerm.trim().isEmpty()) {
+                out.println(mapper.writeValueAsString(medicineService.getAllMedicines()));
+            } else {
+                out.println(mapper.writeValueAsString(medicineService.getMedicinesByName(searchTerm)));
+            }
+        } catch (Exception e) {
+            response.setStatus(500);
+            out.println("{\"error\":\"Ошибка при поиске препаратов: " + e.getMessage() + "\"}");
+        }
+    }
+
+    // Метод для получения цены препарата
+    private void getMedicinePrice(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String medicineIdStr = request.getParameter("id");
+        PrintWriter out = response.getWriter();
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+
+        try {
+            if (medicineIdStr == null || medicineIdStr.trim().isEmpty()) {
+                response.setStatus(400);
+                out.println("{\"error\":\"Не указан ID препарата\"}");
+                return;
+            }
+
+            int medicineId = Integer.parseInt(medicineIdStr);
+            Main.domain.Medicine medicine = medicineService.getMedicineById(medicineId);
+
+            out.println("{\"price\":\"" + medicine.getPrice() + "\", \"quantity\":\"" + medicine.getQuantityInStock() + "\"}");
+        } catch (Exception e) {
+            response.setStatus(500);
+            out.println("{\"error\":\"Ошибка при получении цены: " + e.getMessage() + "\"}");
+        }
+    }
+
+    @Override
+    protected void doDelete(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            User user = (User)request.getAttribute("sessionUser");
+
+            if(user==null || Objects.equals(user.getRole(), "user")){
+                response.sendError(401, "Для доступа к этой странице необходима авторизация");
+                return;
+            }
+            String idParam = request.getParameter("id");
+            System.out.println("DELETING SALE " + idParam);
+
+            if (idParam == null) {
+                System.out.println("Получен запрос на удаление продажи без id");
+                return;
+            }
+
+            int id = Integer.parseInt(idParam);
+            saleService.deleteSale(id);
+
+            // Возвращаем успешный статус для AJAX или перенаправляем
+            String format = request.getParameter("format");
+            if ("html".equals(format)) {
+                response.sendRedirect("sale?format=html&deleted=1");
+            } else {
+                response.setStatus(200);
+                response.getWriter().write("{\"message\":\"Продажа удалена успешно\"}");
+            }
+
+        } catch (NumberFormatException e) {
+            try {
+                response.sendError(400, "ID должен быть числом");
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        } catch (NotFoundException e) {
+            try {
+                response.sendError(404, e.getMessage());
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        } catch (Exception e) {
+            try {
+                response.sendError(500, "Ошибка при удалении продажи: " + e.getMessage());
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+    }
+
+//    @Override
+//    protected void doPut(HttpServletRequest request, HttpServletResponse response) {
+//        try {
+//            // Парсим данные из request body для обновления продажи
+//            Sale sale = mapper.readValue(request.getReader(), Sale.class);
+//            saleService.updateSale(sale);
+//
+//            response.setStatus(200);
+//            response.getWriter().write("{\"message\":\"Продажа обновлена успешно\"}");
+//
+//        } catch (NotFoundException e) {
+//            try {
+//                response.sendError(404, e.getMessage());
+//            } catch (IOException ex) {
+//                throw new RuntimeException(ex);
+//            }
+//        } catch (Exception e) {
+//            try {
+//                response.sendError(500, "Ошибка при обновлении продажи: " + e.getMessage());
+//            } catch (IOException ex) {
+//                throw new RuntimeException(ex);
+//            }
+//        }
+//    }
+
+    protected void sendJson(HttpServletRequest request, HttpServletResponse response)
+            throws IOException {
+
+        PrintWriter out = ServletHelper.start(request, response);
+        String idParam = request.getParameter("id");
+
+        try {
+            if (idParam != null) {
+                int id = Integer.parseInt(idParam);
+                Sale sale = saleService.getSaleById(id);
+                out.println(mapper.writeValueAsString(sale));
+            }else{
+                out.println(mapper.writeValueAsString(saleService.getAllSales()));
+            }
+        } catch (NumberFormatException e) {
+            response.setStatus(400);
+            out.println("{\"error\":\"ID должен быть числом!\"}");
+        } catch (NotFoundException e) {
+            response.setStatus(404);
+            out.println("{\"error\":\"" + e.getMessage() + "\"}");
+        } catch (Exception e) {
+            response.setStatus(500);
+            out.println("{\"error\":\"Ошибка сервера: " + e.getMessage() + "\"}");
+        }
+
+        out.close();
+    }
+
+    protected void sendJSP(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        String idParam = request.getParameter("id");
+
+        try {
+            if (idParam != null) {
+                int id = Integer.parseInt(idParam);
+                Sale sale = saleService.getSaleById(id);
+                request.setAttribute("sale", sale);
+                request.getRequestDispatcher("/sale-details.jsp").forward(request, response);
+            } else {
+                // Получаем все продажи с дополнительной информацией
+                request.setAttribute("sales", saleService.getAllSales());
+                request.getRequestDispatcher("/sale-list.jsp").forward(request, response);
+            }
+        } catch (NumberFormatException e) {
+            request.setAttribute("error", "Некорректный ID продажи");
+            request.getRequestDispatcher("/error.jsp").forward(request, response);
+        } catch (NotFoundException e) {
+            request.setAttribute("error", e.getMessage());
+            request.getRequestDispatcher("/error.jsp").forward(request, response);
+        }
+    }
+} 
+ 
+========================================== 
+Файл: C:\Users\moroz\IdeaProjects\stsr\src\main\java\Main\servlet\UserServlet.java 
+========================================== 
+ 
+package Main.servlet;
+
+import Main.NotFoundException;
+import Main.ServletHelper;
+import Main.domain.User;
+import Main.service.IUserService;
+import Main.service.ServiceFactory;
+import Main.service.UserService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.Objects;
+@WebServlet("/user")
+public class UserServlet extends HttpServlet {
+    private IUserService userService;
+    private ObjectMapper mapper;
+
+    @Override
+    public void init() {
+        this.userService = new ServiceFactory().createUserService();
+        mapper = new ObjectMapper();
+    }
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String action = request.getParameter("action");
+        System.out.println("user doGet "+action);
+        if(action==null || action.equals("get")){
+            try {
+                if (Objects.equals(request.getParameter("format"), "json")) {
+                    sendJson(request, response);
+                } else {
+                    sendJSP(request, response);
+                }
+            } catch (Exception e) {
+                try {
+                    response.sendError(500, "Ошибка: " + e.getMessage());
+                } catch (IOException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+            return;
+        }else{
+            response.sendError(400, "Unknown action");
+        }
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        User sessionUser = (User)request.getAttribute("sessionUser");
+
+        if(sessionUser==null || Objects.equals(sessionUser.getRole(), "user")){
+            response.sendError(401, "Для доступа к этой странице необходима авторизация");
+            return;
+        }
+        String action = request.getParameter("action");
+        System.out.println("user doPost "+action);
+        if(Objects.equals(action, "add")) {
+            try {
+                // Получаем данные из формы
+                String name = request.getParameter("name");
+                String email = request.getParameter("email");
+                String password = request.getParameter("password");
+                String confirmPassword = request.getParameter("confirmPassword");
+                String role = request.getParameter("role");
+
+                // Валидация
+                if (!password.equals(confirmPassword)) {
+                    request.setAttribute("error", "Пароли не совпадают");
+                    request.getRequestDispatcher("/user-add.jsp").forward(request, response);
+                    return;
+                }
+
+                if (password.length() < 6) {
+                    request.setAttribute("error", "Пароль должен содержать минимум 6 символов");
+                    request.getRequestDispatcher("/user-add.jsp").forward(request, response);
+                    return;
+                }
+
+                User user = new User();
+                user.setName(name.trim());
+                user.setEmail(email.trim());
+                user.setPassword(password);
+                user.setRole(role);
+
+                // Сохраняем через сервис
+                userService.addUser(user);
+
+                // Перенаправляем на список с сообщением об успехе
+                response.sendRedirect("user?format=html&success=1");
+
+            } catch (Exception e) {
+                try {
+                    e.printStackTrace();
+                    request.setAttribute("error", "Ошибка при создании пользователя: " + e.getMessage());
+                    request.getRequestDispatcher("/user-add.jsp").forward(request, response);
+                } catch (ServletException | IOException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+            return;
+        }
+    }
+
+    @Override
+    protected void doDelete(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            User user = (User)request.getAttribute("sessionUser");
+
+            if(user==null || Objects.equals(user.getRole(), "user")){
+                response.sendError(401, "Для доступа к этой странице необходима авторизация");
+                return;
+            }
+            String idParam = request.getParameter("id");
+            System.out.println("DELETING USER " + idParam);
+
+            if (idParam == null) {
+                System.out.println("Получен запрос на удаление пользователя без id");
+                return;
+            }
+
+            int id = Integer.parseInt(idParam);
+            User currentUser = (User) request.getSession().getAttribute("user");
+
+            // Проверяем, не пытается ли пользователь удалить сам себя
+            if (currentUser != null && currentUser.getId() == id) {
+                response.sendError(400, "Нельзя удалить самого себя");
+                return;
+            }
+
+            userService.deleteUser(id);
+
+            // Возвращаем успешный статус
+            String format = request.getParameter("format");
+            if ("html".equals(format)) {
+                response.sendRedirect("user?format=html&deleted=1");
+            } else {
+                response.setStatus(200);
+                response.getWriter().write("{\"message\":\"Пользователь удален успешно\"}");
+            }
+
+        } catch (NumberFormatException e) {
+            try {
+                response.sendError(400, "ID должен быть числом");
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        } catch (NotFoundException e) {
+            try {
+                response.sendError(404, e.getMessage());
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        } catch (Exception e) {
+            try {
+                response.sendError(500, "Ошибка при удалении пользователя: " + e.getMessage());
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+    }
+
+//    @Override
+//    protected void doPut(HttpServletRequest request, HttpServletResponse response) {
+//        try {
+//            // Для обновления пользователя
+//            User user = mapper.readValue(request.getReader(), User.class);
+//
+//            // Если пароль не указан, сохраняем старый
+//            if (user.getPassword() == null || user.getPassword().isEmpty()) {
+//                User existingUser = userService.getUserById(user.getId());
+//                user.setPassword(existingUser.getPassword());
+//            }
+//
+//            userService.updateUser(user);
+//
+//            response.setStatus(200);
+//            response.getWriter().write("{\"message\":\"Пользователь обновлен успешно\"}");
+//
+//        } catch (NotFoundException e) {
+//            try {
+//                response.sendError(404, e.getMessage());
+//            } catch (IOException ex) {
+//                throw new RuntimeException(ex);
+//            }
+//        } catch (Exception e) {
+//            try {
+//                response.sendError(500, "Ошибка при обновлении пользователя: " + e.getMessage());
+//            } catch (IOException ex) {
+//                throw new RuntimeException(ex);
+//            }
+//        }
+//    }
+
+    protected void sendJson(HttpServletRequest request, HttpServletResponse response)
+            throws IOException {
+        PrintWriter out = ServletHelper.start(request, response);
+        String idParam = request.getParameter("id");
+
+        try {
+            if (idParam != null) {
+                int id = Integer.parseInt(idParam);
+                User user = userService.getUserById(id);
+                out.println(mapper.writeValueAsString(user));
+            } else {
+                out.println(mapper.writeValueAsString(userService.getAllUsers()));
+            }
+        } catch (NumberFormatException e) {
+            response.setStatus(400);
+            out.println("{\"error\":\"ID должен быть числом!\"}");
+        } catch (NotFoundException e) {
+            response.setStatus(404);
+            out.println("{\"error\":\"" + e.getMessage() + "\"}");
+        } catch (Exception e) {
+            response.setStatus(500);
+            out.println("{\"error\":\"Ошибка сервера: " + e.getMessage() + "\"}");
+        }
+
+        out.close();
+    }
+
+    protected void sendJSP(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        String idParam = request.getParameter("id");
+
+        try {
+            if (idParam != null) {
+                int id = Integer.parseInt(idParam);
+                User user = userService.getUserById(id);
+                request.setAttribute("user", user);
+                request.getRequestDispatcher("/user-details.jsp").forward(request, response);
+            } else {
+                request.setAttribute("users", userService.getAllUsers());
+                request.getRequestDispatcher("/user-list.jsp").forward(request, response);
+            }
+        } catch (NumberFormatException e) {
+            request.setAttribute("error", "Некорректный ID пользователя");
+            request.getRequestDispatcher("/error.jsp").forward(request, response);
+        } catch (NotFoundException e) {
+            request.setAttribute("error", e.getMessage());
+            request.getRequestDispatcher("/error.jsp").forward(request, response);
+        }
+    }
+} 

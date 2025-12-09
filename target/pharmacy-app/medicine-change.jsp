@@ -62,7 +62,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>✏️ Редактировать лекарство</h1>
+        <h1>Редактировать лекарство</h1>
         <div class="nav">
             <a href="medicine">Назад к списку</a>
         </div>
@@ -138,13 +138,7 @@
 
             <div class="form-group" style="display: flex; gap: 10px;">
                 <button type="submit" class="btn btn-success">Сохранить изменения</button>
-                <a href="medicine" class="btn btn-secondary">Отмена</a>
-                <a href="medicine?action=delete&id=${medicine.id}"
-                   class="btn btn-danger"
-                   onclick="return confirm('Вы уверены, что хотите удалить этот препарат?')">
-                    Удалить
-                </a>
-            </div>
+                <a href="medicine" class="btn btn-primary">Отмена</a>
         </form>
     </div>
 

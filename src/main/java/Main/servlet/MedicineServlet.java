@@ -3,7 +3,10 @@ package Main.servlet;
 import Main.NotFoundException;
 import Main.ServletHelper;
 import Main.domain.Medicine;
+import Main.domain.User;
+import Main.service.IMedicineService;
 import Main.service.MedicineService;
+import Main.service.ServiceFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
@@ -19,12 +22,11 @@ import java.util.Objects;
 
 @WebServlet("/medicine")
 public class MedicineServlet extends HttpServlet {
-    MedicineService medicineService;
+    IMedicineService medicineService;
     ObjectMapper mapper;
-    //вызовется один раз при запуске
     @Override
     public void init() {
-        this.medicineService = new MedicineService();
+        this.medicineService = new ServiceFactory().createMedicineService();
         mapper = new ObjectMapper();
     }
     @Override
@@ -32,8 +34,8 @@ public class MedicineServlet extends HttpServlet {
         try {
             String action = request.getParameter("action");
             String idParam = request.getParameter("id");
-
-            if(action==null){
+            System.out.println("medicine doGet() "+action);
+            if(action==null || action.equals("get")){
                 if (Objects.equals(request.getParameter("format"), "json")) {
                     PrintWriter out = ServletHelper.start(request, response);
                     try {
@@ -69,21 +71,28 @@ public class MedicineServlet extends HttpServlet {
             switch (action){
                 default -> request.getRequestDispatcher("/medicine-list.jsp").forward(request, response);
                 case "edit" -> {
+                    User user = (User)request.getAttribute("sessionUser");
+
+                    if(user==null || Objects.equals(user.getRole(), "user")){
+                        response.sendError(401, "Для доступа к этой странице необходима авторизация");
+                        return;
+                    }
                     if (idParam != null && !idParam.trim().isEmpty()) {
                         Integer id = Integer.parseInt(idParam);
                         Medicine medicine = medicineService.getMedicineById(id);
 
                         if (medicine == null) {
-                            response.sendRedirect("medicine?format=html&error=Препарат с ID=" + id + " не найден");
+                            response.sendError(404, "Препарат с таким id не найден");
+                            return;
                         }
                         request.setAttribute("medicine", medicine);
 
                         request.getRequestDispatcher("/medicine-change.jsp").forward(request, response);
                     } else {
-                        response.sendRedirect("medicine?format=html&error=Не указан ID препарата");
+                        response.sendRedirect("medicine?&error=Не указан ID препарата");
                     }
                 }
-                case "add" -> request.getRequestDispatcher("/add-medicine.jsp").forward(request, response);
+                case "add" -> request.getRequestDispatcher("/medicine-add.jsp").forward(request, response);
             }
         } catch (Exception e) {
             try {
@@ -97,16 +106,17 @@ public class MedicineServlet extends HttpServlet {
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) {
         try {
-            // Определяем действие: добавление или обновление
             String action = request.getParameter("action");
             String idParam = request.getParameter("id");
+            System.out.println("medicine doPost() "+action);
 
-            if (idParam == null) {
-                System.out.println("Получен запрос на добавление без id");
+            User user = (User)request.getAttribute("sessionUser");
+
+            if(user==null || Objects.equals(user.getRole(), "user")){
+                response.sendError(401, "Для доступа к этой странице необходима авторизация");
                 return;
             }
 
-            // Получаем данные из формы
             String name = request.getParameter("name");
             String description = request.getParameter("description");
             String priceStr = request.getParameter("price");
@@ -114,7 +124,6 @@ public class MedicineServlet extends HttpServlet {
             String quantityStr = request.getParameter("quantityInStock");
             String requiresPrescription = request.getParameter("requiresPrescription");
 
-            // Валидация общих полей
             if (name == null || name.trim().isEmpty()) {
                 response.sendError(400, "Название обязательно для заполнения");
                 return;
@@ -141,9 +150,7 @@ public class MedicineServlet extends HttpServlet {
                 return;
             }
 
-            // Проверяем, это обновление существующего препарата
             if ("update".equals(action) && idParam != null && !idParam.trim().isEmpty()) {
-                // ОБНОВЛЕНИЕ существующего препарата
                 Integer id = Integer.parseInt(idParam);
 
                 // Создаём объект Medicine с ID
@@ -203,6 +210,12 @@ public class MedicineServlet extends HttpServlet {
     @Override
     protected void doDelete(HttpServletRequest request, HttpServletResponse response) {
         try {
+            User user = (User)request.getAttribute("sessionUser");
+
+            if(user==null || Objects.equals(user.getRole(), "user")){
+                response.sendError(401, "Для доступа к этой странице необходима авторизация");
+                return;
+            }
             String idParam = request.getParameter("id");
             System.out.println("DELETING "+idParam);
             if (idParam == null) {

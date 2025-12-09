@@ -3,18 +3,21 @@ package Main.service;
 import Main.DatabaseConnection;
 import Main.NotFoundException;
 import Main.domain.Medicine;
+import Main.repositories.IMedicineRepository;
 import Main.repositories.MedicineRepository;
+import Main.repositories.RepositoryFactory;
 
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
-public class MedicineService {
-    private MedicineRepository medicineRepository;
+public class MedicineService implements IMedicineService{
+    private IMedicineRepository medicineRepository;
 
-    public MedicineService() {
-        this.medicineRepository = new MedicineRepository();
+    public MedicineService(IMedicineRepository medicineRepository) {
+        this.medicineRepository = medicineRepository;
     }
 
     public void addMedicine(Medicine medicine) {
@@ -116,6 +119,25 @@ public class MedicineService {
         } catch (SQLException e) {
             DatabaseConnection.closeConnection(connection,false);
             throw new RuntimeException("Ошибка при поиске лекарства: "+e.getMessage() , e);
+        }
+    }
+    public List<Medicine> getMedicinesByName(String name) {
+        Connection connection = null;
+        try {
+            connection = DatabaseConnection.startTransaction();
+            List<Medicine> allMedicines = medicineRepository.selectAll(connection);
+            DatabaseConnection.closeConnection(connection, true);
+
+            return allMedicines.stream()
+                    .filter(medicine -> {
+                        String medicineName = medicine.getName().toLowerCase();
+                        String searchName = name.toLowerCase();
+                        return medicineName.contains(searchName);
+                    })
+                    .collect(Collectors.toList());
+        } catch (SQLException e) {
+            DatabaseConnection.closeConnection(connection, false);
+            throw new RuntimeException("Ошибка при поиске препаратов: " + e.getMessage(), e);
         }
     }
 }
